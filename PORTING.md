@@ -184,3 +184,7 @@
 ## 2026-11-18 追記2 / Addendum 2
 **日本語**: **Snapdragon実機**: M06(SM7435=Snapdragon 7s Gen 2、Cortex-A55×4+A78×4)で v0.4.4 を実行し、`rmojo cpu`(neon/dotprod/lse等)と、版を0.0.1に偽装した `cargo ndk` ビルドの `rmojo update` → 実リリース v0.4.4 への置換を確認。**BSD**: GitHub の FreeBSD 14.2 仮想マシン(`freebsd.yml`、週次・手動)でビルド・全11試験・`rmojo cpu` が成功。BSD向けの配布物は無いので、更新は何もしないのが正しい動作(試験もそう直した)。実機のBSDは未確認。
 **English**: **Snapdragon hardware**: on the M06 (SM7435 = Snapdragon 7s Gen 2, Cortex-A55 x4 + A78 x4) v0.4.4 ran `rmojo cpu` (neon/dotprod/lse...), and a `cargo ndk` build disguised as 0.0.1 updated itself to the real v0.4.4 with `rmojo update`. **BSD**: the build, all 11 tests and `rmojo cpu` pass in a GitHub FreeBSD 14.2 VM (`freebsd.yml`, weekly/manual). There is no BSD release asset, so the updater correctly does nothing there (the test now says so). Real BSD hardware is unverified.
+
+## 2026-11-22 追記: FreeBSD 14.5 での試験 / FreeBSD 14.5 test
+**日本語**: Windows 上の QEMU(WHPX)で起動した FreeBSD 14.5-RELEASE で、`cargo test --release` 11件成功、`rmojo update` は「最新です(0.4.4)」。BSD 用のリリース添付は無いので更新機能は何もしないのが正しい。詳細は `F:\runo\PORTING.md` 末尾。実機 BSD は未確認。
+**English**: On FreeBSD 14.5-RELEASE booted in QEMU (WHPX) on Windows, `cargo test --release` passes 11 tests and `rmojo update` prints "up to date (0.4.4)". With no BSD release asset the updater correctly does nothing. See the end of `F:\runo\PORTING.md`. Real BSD hardware is unverified.
