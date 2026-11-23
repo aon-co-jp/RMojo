@@ -191,3 +191,7 @@
 
 ## 2026-11-23 追記: MFastAPI からの利用設計
 RMojo を FastAPI 互換サーバー(MFastAPI)のハンドラ実行系にする設計を `MFastAPI/DESIGN-MOJO.md` に書いた。RMojo 側の必要作業は(1)`rmojo-core` へのライブラリ化(動作を変えない分割、`tests/run.py` 差分0)、(2)ステップ/時間/メモリ上限(実測で無限ループ・メモリ増加は現状止まらない、再帰のみ上限あり)、(3)`Program::call` API。実装は未着手。
+
+## 2026-11-23 追記: ライブラリ化(段階1) / Library split (stage 1)
+**日本語**: `src/main.rs` を `src/lib.rs`(コア)と薄い `main.rs` に分け、公開API `compile_source(src)` / `CompiledProgram::call(name, &[Value])`(`Value`=Int/Float/Bool/Str/Null)を追加。CPython との差分0(`tests/run.py`)・単体11件・`tests/api.rs` 成功。**未了**: `Limits`(ステップ数・時間・メモリ。`while True` と `list.append` は5秒でも止まらない実測のため新規実装が要る)、リスト/辞書の値、MFastAPI(`runtime:"rmojo"`)からの呼び出し。設計は `MFastAPI/DESIGN-MOJO.md`。
+**English**: `src/main.rs` is split into `src/lib.rs` (core) and a thin `main.rs`, with a public API `compile_source(src)` / `CompiledProgram::call(name, &[Value])`. Zero differences against CPython, 11 unit tests and `tests/api.rs` pass. **Open**: `Limits` (steps/time/memory; infinite loops are not stopped today), list/dict values, and calling from MFastAPI (`runtime:"rmojo"`).
