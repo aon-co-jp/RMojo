@@ -1,3 +1,3 @@
 source: aon-co-jp/RMojo
-commit: 52ba2c6c7ab7b4d16240c9b865aaa2b0c9917d26
-updated: 2026-11-23T09:26:52Z
+commit: ee147db917ab5454e54105684d52b57e126c9284
+updated: 2026-11-23T11:45:21Z

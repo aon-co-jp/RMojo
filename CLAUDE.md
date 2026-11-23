@@ -142,3 +142,6 @@
 **English**: Every product that has an installer ships its Windows build as an `.exe` (Inno Setup/NSIS, with PyInstaller bundling where needed); PowerShell scripts stay for development only. RMojo ships `RMojo-Setup-x64/arm64.exe`; 2FastAPI ships `2FastAPI-Setup-x64/arm64.exe` since v0.3.1. MFastAPI has no installer (wheel only: `pip install mfastapi`, also on Windows).
 
 **2026-11-16**: 集合・連鎖代入・try/else・bare raise・`**`展開・入れ子書式・型別except・例外クラス継承に対応、リスト速度は CPython の約1.2倍まで改善(詳細 `PORTING.md`)。 / Added sets, chained assignment, try/else, bare raise, `**` unpacking, nested format specs, typed except and exception inheritance; list speed is now ~1.2x of CPython (see `PORTING.md`).
+
+## 2026-11-23 組み込み上限 / Embedding limits
+`Limits{max_steps,max_ms}` は `CompiledProgram::call_limited` でループ反復ごとに効く(時計は1024回ごと)。変更したら `tests/api.rs` と `tests/run.py`(差分0)を確認し、MFastAPI の `DESIGN-MOJO.md` も同日に更新する。未了=メモリ上限・単発の重い処理。
