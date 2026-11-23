@@ -145,3 +145,7 @@
 
 ## 2026-11-23 組み込み上限 / Embedding limits
 `Limits{max_steps,max_ms}` は `CompiledProgram::call_limited` でループ反復ごとに効く(時計は1024回ごと)。変更したら `tests/api.rs` と `tests/run.py`(差分0)を確認し、MFastAPI の `DESIGN-MOJO.md` も同日に更新する。未了=メモリ上限・単発の重い処理。
+
+## 2026-11-24 メモリ上限 / Memory caps
+`MAX_COLL = 20_000_000`(`src/lib.rs`)。`append`・`list*n`・`str*n`・`range` が超えると `MemoryError`。試験 `memory_caps_stop_blowup`。実メモリ(RSS)の上限は未実装。
+`MAX_COLL = 20_000_000`; exceeding it in `append`, `list*n`, `str*n` or `range` raises `MemoryError`. Test: `memory_caps_stop_blowup`. A true RSS cap is not implemented.
