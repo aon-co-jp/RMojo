@@ -7,3 +7,13 @@ fn call_scalar() {
     assert!(p.call("nope", &[]).is_err());
     assert!(p.call("add", &[Value::Int(1)]).is_err());
 }
+
+#[test]
+fn step_limit_stops_runaway() {
+    use rmojo::Limits;
+    let p = compile_source("def f():\n    xs = []\n    while True:\n        xs.append(1)\n    return 0\ndef g(n: int) -> int:\n    t = 0\n    while True:\n        t = t + n\n    return t\ndef ok(n):\n    t = 0\n    for i in range(n):\n        t = t + i\n    return t\n").unwrap();
+    let lim = Limits { max_steps: 10_000 };
+    assert!(p.call_limited("f", &[], &lim).unwrap_err().contains("LimitError"));
+    assert!(p.call_limited("g", &[Value::Int(1)], &lim).unwrap_err().contains("LimitError"));
+    assert_eq!(p.call_limited("ok", &[Value::Int(100)], &lim).unwrap(), Value::Int(4950));
+}

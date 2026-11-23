@@ -1226,6 +1226,7 @@ struct IVm<'p> {
     funcs: &'p [Option<IFunc>],
     stack: Vec<i64>,
     depth: usize,
+    fuel: u64,
 }
 
 impl<'p> IVm<'p> {
@@ -1352,6 +1353,7 @@ impl<'p> IVm<'p> {
                 }
                 IS::While(c, b) => {
                     while self.cd(c, base)? {
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
                         match self.blk(b, base)? {
                             IFlow::Break => break,
                             IFlow::Ret(v) => return Ok(IFlow::Ret(v)),
@@ -1367,6 +1369,7 @@ impl<'p> IVm<'p> {
                         return Err("ValueError: range() arg 3 must not be zero".into());
                     }
                     while (st > 0 && i < end) || (st < 0 && i > end) {
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
                         self.stack[base + *t] = i;
                         match self.blk(b, base)? {
                             IFlow::Break => break,
@@ -1405,6 +1408,7 @@ struct Vm<'p> {
     brk: bool,
     cur: String,
     out: std::io::BufWriter<std::io::Stdout>,
+    fuel: u64,
 }
 
 fn pyrepr_f(f: f64) -> String {
@@ -2237,7 +2241,7 @@ impl<'p> Vm<'p> {
                     return Err("RecursionError: maximum recursion depth exceeded".into());
                 }
                 if self.p.ifuncs[*fi].is_some() {
-                    let mut iv = IVm { funcs: &self.p.ifuncs, stack: Vec::with_capacity(64), depth: self.depth };
+                    let mut iv = IVm { funcs: &self.p.ifuncs, stack: Vec::with_capacity(64), depth: self.depth, fuel: self.fuel };
                     for a in args.iter() {
                         let v = match self.eval(a, base)? {
                             V::I(i) => i,
@@ -2247,6 +2251,7 @@ impl<'p> Vm<'p> {
                         iv.stack.push(v);
                     }
                     let r = iv.run(*fi, 0)?;
+                    self.fuel = iv.fuel;
                     return Ok(V::I(r));
                 }
                 let nbase = self.stack.len();
@@ -2647,6 +2652,7 @@ impl<'p> Vm<'p> {
                 St::While(c, b) => {
                     let mut broke = false;
                     while self.cond(c, base)? {
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
                         match self.exec_block(b, base)? {
                             Flow::Break => {
                                 broke = true;
@@ -2681,6 +2687,7 @@ impl<'p> Vm<'p> {
                     }
                     let mut broke = false;
                     while (st > 0 && i < end) || (st < 0 && i > end) {
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
                         match t {
                             Target::Local(k) => self.stack[base + *k] = V::I(i),
                             Target::Global(k) => self.globals[*k] = V::I(i),
@@ -2957,7 +2964,7 @@ fn builtin_method(o: &V, name: &str, a: Vec<V>) -> R<V> {
 
 fn run_source_inner(src: &str) -> R<()> {
     let prog = compile(src)?;
-    let mut vm = Vm { p: &prog, globals: vec![V::N; prog.nglobals], depth: 0, stack: Vec::new(), brk: false, cur: String::new(), out: std::io::BufWriter::new(std::io::stdout()) };
+    let mut vm = Vm { p: &prog, globals: vec![V::N; prog.nglobals], depth: 0, stack: Vec::new(), brk: false, cur: String::new(), out: std::io::BufWriter::new(std::io::stdout()), fuel: u64::MAX };
     let r = vm.exec_block(&prog.main_body, 0).map(|_| ());
     let r = r.and_then(|_| match prog.entry {
         Some(fi) => {
@@ -3000,9 +3007,14 @@ pub fn compile_source(src: &str) -> Result<CompiledProgram, String> {
 impl CompiledProgram {
     /// Call function `name` with scalar arguments. Run on a thread with a large stack for deep recursion.
     pub fn call(&self, name: &str, args: &[Value]) -> Result<Value, String> {
+        self.call_limited(name, args, &Limits::default())
+    }
+
+    /// Like `call`, with a loop-iteration budget (`max_steps`) so runaway handlers stop with `LimitError`.
+    pub fn call_limited(&self, name: &str, args: &[Value], lim: &Limits) -> Result<Value, String> {
         let p = &self.0;
         let fi = *p.names.get(name).ok_or_else(|| format!("NameError: no function {name}"))?;
-        let mut vm = Vm { p, globals: vec![V::N; p.nglobals], depth: 0, stack: Vec::new(), brk: false, cur: String::new(), out: std::io::BufWriter::new(std::io::stdout()) };
+        let mut vm = Vm { p, globals: vec![V::N; p.nglobals], depth: 0, stack: Vec::new(), brk: false, cur: String::new(), out: std::io::BufWriter::new(std::io::stdout()), fuel: lim.max_steps };
         vm.exec_block(&p.main_body, 0).map_err(|e| e.to_string())?;
         let vals = args
             .iter()
@@ -3030,4 +3042,16 @@ impl CompiledProgram {
 /// Run a whole program (used by `rmojo run`).
 pub fn run_source(src: &str) -> Result<(), String> {
     run_source_inner(src).map_err(|e| e.to_string())
+}
+
+/// Execution limits for embedded calls.
+#[derive(Clone, Debug)]
+pub struct Limits {
+    /// Maximum number of loop iterations (while / for) across the whole call, including module-level code.
+    pub max_steps: u64,
+}
+impl Default for Limits {
+    fn default() -> Self {
+        Limits { max_steps: u64::MAX }
+    }
 }
