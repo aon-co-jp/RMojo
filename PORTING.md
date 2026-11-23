@@ -188,3 +188,6 @@
 ## 2026-11-22 追記: FreeBSD 14.5 での試験 / FreeBSD 14.5 test
 **日本語**: Windows 上の QEMU(WHPX)で起動した FreeBSD 14.5-RELEASE で、`cargo test --release` 11件成功、`rmojo update` は「最新です(0.4.4)」。BSD 用のリリース添付は無いので更新機能は何もしないのが正しい。詳細は `F:\runo\PORTING.md` 末尾。実機 BSD は未確認。
 **English**: On FreeBSD 14.5-RELEASE booted in QEMU (WHPX) on Windows, `cargo test --release` passes 11 tests and `rmojo update` prints "up to date (0.4.4)". With no BSD release asset the updater correctly does nothing. See the end of `F:\runo\PORTING.md`. Real BSD hardware is unverified.
+
+## 2026-11-23 追記: MFastAPI からの利用設計
+RMojo を FastAPI 互換サーバー(MFastAPI)のハンドラ実行系にする設計を `MFastAPI/DESIGN-MOJO.md` に書いた。RMojo 側の必要作業は(1)`rmojo-core` へのライブラリ化(動作を変えない分割、`tests/run.py` 差分0)、(2)ステップ/時間/メモリ上限(実測で無限ループ・メモリ増加は現状止まらない、再帰のみ上限あり)、(3)`Program::call` API。実装は未着手。
