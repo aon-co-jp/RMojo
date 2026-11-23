@@ -203,3 +203,7 @@ RMojo を FastAPI 互換サーバー(MFastAPI)のハンドラ実行系にする�
 ## 2026-11-23 追記: 時間上限(段階1の続き) / Wall-time limit
 **日本語**: `Limits` に `max_ms` を追加(ループ1024回ごとに時計を確認、超過で `LimitError: time limit exceeded`)。無限ループ(整数・list.append)が100msで止まる試験を追加、`cargo test` 14件成功、CPython との差分0。**未了**: メモリ上限、巨大な `range`・文字列の掛け算など反復を伴わない単発処理、MFastAPI からの呼び出し(段階2: `rmojo-py`)。
 **English**: Added `Limits.max_ms` (clock checked every 1024 loop iterations; `LimitError: time limit exceeded`). Infinite loops stop at 100 ms (tested); all tests pass, zero diffs vs CPython. **Open**: memory limit, one-shot heavy operations, and the MFastAPI call path (stage 2).
+
+## 2026-11-24 メモリ上限 / Memory caps
+上記の上限を追加。`cargo test` 全成功。MFastAPI の段階0の未了(メモリ上限)は、要素数の上限で一部解消(RSS 上限は未了)。次は段階2 `rmojo-py`。
+Caps added; `cargo test` passes. MFastAPI stage-0's memory item is partly covered by the element cap (RSS cap open). Next: stage 2 `rmojo-py`.

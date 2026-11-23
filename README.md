@@ -189,3 +189,7 @@ Download: https://github.com/aon-co-jp/RMojo/releases/latest
 **2026-11-16**: 集合・連鎖代入・try/else・bare raise・`**`展開・入れ子書式・型別except・例外クラス継承に対応、リスト速度は CPython の約1.2倍まで改善(詳細 `PORTING.md`)。 / Added sets, chained assignment, try/else, bare raise, `**` unpacking, nested format specs, typed except and exception inheritance; list speed is now ~1.2x of CPython (see `PORTING.md`).
 
 **2026-11-23**: 組み込み用 API(`compile_source` / `call_limited`)に、ループのステップ上限と時間上限(`Limits{max_steps,max_ms}`)を追加。メモリ上限は未了。 / Embedding API now has step and wall-time limits; memory limit is open.
+
+### 2026-11-24 メモリ上限 / Memory caps
+リスト・文字列の増殖(`append`・`*`・`range`)は1つあたり2,000万要素(文字列は×8バイト)で `MemoryError` として止まります(組み込みでも CLI でも)。時間上限と合わせて暴走を防ぎます。
+Lists and strings (`append`, `*`, `range`) stop with `MemoryError` at 20M elements (strings: x8 bytes), in both the embedding API and the CLI, on top of the time limit.

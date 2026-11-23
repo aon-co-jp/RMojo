@@ -1700,28 +1700,36 @@ fn binop(op: Bop, a: V, b: V) -> R<V> {
         });
     }
     if op == Bop::Mul {
-        let rep = |seq: &V, n: i64| -> Option<V> {
+        let rep = |seq: &V, n: i64| -> Result<Option<V>, Er> {
             let n = n.max(0) as usize;
             match seq {
                 V::L(l) => {
                     let l = l.borrow();
+                    if l.len().saturating_mul(n) > MAX_COLL {
+                        return Err(Er::from("MemoryError: list too large"));
+                    }
                     let mut v = Vec::with_capacity(l.len() * n);
                     for _ in 0..n {
                         v.extend(l.iter().cloned());
                     }
-                    Some(new_list(v))
+                    Ok(Some(new_list(v)))
                 }
-                V::S(s) => Some(V::S(Rc::new(s.repeat(n)))),
-                _ => None,
+                V::S(s) => {
+                    if s.len().saturating_mul(n) > MAX_COLL * 8 {
+                        return Err(Er::from("MemoryError: string too large"));
+                    }
+                    Ok(Some(V::S(Rc::new(s.repeat(n)))))
+                }
+                _ => Ok(None),
             }
         };
         if let Some(n) = int_of(&b) {
-            if let Some(r) = rep(&a, n) {
+            if let Some(r) = rep(&a, n)? {
                 return Ok(r);
             }
         }
         if let Some(n) = int_of(&a) {
-            if let Some(r) = rep(&b, n) {
+            if let Some(r) = rep(&b, n)? {
                 return Ok(r);
             }
         }
@@ -2041,7 +2049,11 @@ impl<'p> Vm<'p> {
                 // fast path: list.append(x) without building an argument vector or matching names
                 if let (V::L(l), 1, "append") = (&ov, args.len(), name.as_str()) {
                     let x = self.eval(&args[0], base)?;
-                    l.borrow_mut().push(x);
+                    let mut lb = l.borrow_mut();
+                    if lb.len() >= MAX_COLL {
+                        return Err(Er::from("MemoryError: list too large"));
+                    }
+                    lb.push(x);
                     return Ok(V::N);
                 }
                 if !matches!(ov, V::O(_)) {
@@ -2394,7 +2406,7 @@ impl<'p> Vm<'p> {
                 while (st > 0 && i < hi) || (st < 0 && i > hi) {
                     v.push(V::I(i));
                     i += st;
-                    if v.len() > 100_000_000 {
+                    if v.len() > MAX_COLL {
                         return Err("MemoryError: range too large".into());
                     }
                 }
@@ -3052,6 +3064,9 @@ thread_local! {
 }
 
 /// Checked on every loop iteration; looks at the clock once per 1024 iterations.
+/// 1つのリスト/文字列が持てる要素数の上限(メモリ暴走防止)
+const MAX_COLL: usize = 20_000_000;
+
 fn check_deadline() -> Result<(), Er> {
     let t = TICK.with(|c| {
         let v = c.get().wrapping_add(1);

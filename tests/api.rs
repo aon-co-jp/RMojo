@@ -28,3 +28,13 @@ fn time_limit_stops_runaway() {
     assert!(p.call_limited("h", &[], &lim).unwrap_err().contains("time limit"));
     assert!(t.elapsed().as_secs() < 5);
 }
+
+#[test]
+fn memory_caps_stop_blowup() {
+    let p = rmojo::compile_source("def a():\n    l = [0]\n    while True:\n        l.append(1)\ndef b():\n    return len('x' * 100000000000)\ndef c():\n    return len(list(range(10**12)))\n").unwrap();
+    let lim = rmojo::Limits { max_steps: u64::MAX, max_ms: Some(20_000) };
+    for f in ["a", "b", "c"] {
+        let e = p.call_limited(f, &[], &lim).unwrap_err().to_string();
+        assert!(e.contains("MemoryError") || e.contains("LimitError"), "{f}: {e}");
+    }
+}
