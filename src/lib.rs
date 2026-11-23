@@ -1353,7 +1353,7 @@ impl<'p> IVm<'p> {
                 }
                 IS::While(c, b) => {
                     while self.cd(c, base)? {
-                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?; check_deadline()?;
                         match self.blk(b, base)? {
                             IFlow::Break => break,
                             IFlow::Ret(v) => return Ok(IFlow::Ret(v)),
@@ -1369,7 +1369,7 @@ impl<'p> IVm<'p> {
                         return Err("ValueError: range() arg 3 must not be zero".into());
                     }
                     while (st > 0 && i < end) || (st < 0 && i > end) {
-                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?; check_deadline()?;
                         self.stack[base + *t] = i;
                         match self.blk(b, base)? {
                             IFlow::Break => break,
@@ -2652,7 +2652,7 @@ impl<'p> Vm<'p> {
                 St::While(c, b) => {
                     let mut broke = false;
                     while self.cond(c, base)? {
-                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?; check_deadline()?;
                         match self.exec_block(b, base)? {
                             Flow::Break => {
                                 broke = true;
@@ -2687,7 +2687,7 @@ impl<'p> Vm<'p> {
                     }
                     let mut broke = false;
                     while (st > 0 && i < end) || (st < 0 && i > end) {
-                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?;
+                        self.fuel = self.fuel.checked_sub(1).ok_or_else(|| Er::from("LimitError: step limit exceeded"))?; check_deadline()?;
                         match t {
                             Target::Local(k) => self.stack[base + *k] = V::I(i),
                             Target::Global(k) => self.globals[*k] = V::I(i),
@@ -3013,6 +3013,8 @@ impl CompiledProgram {
     /// Like `call`, with a loop-iteration budget (`max_steps`) so runaway handlers stop with `LimitError`.
     pub fn call_limited(&self, name: &str, args: &[Value], lim: &Limits) -> Result<Value, String> {
         let p = &self.0;
+        DEADLINE.with(|d| d.set(lim.max_ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms))));
+        let _reset = DeadlineReset;
         let fi = *p.names.get(name).ok_or_else(|| format!("NameError: no function {name}"))?;
         let mut vm = Vm { p, globals: vec![V::N; p.nglobals], depth: 0, stack: Vec::new(), brk: false, cur: String::new(), out: std::io::BufWriter::new(std::io::stdout()), fuel: lim.max_steps };
         vm.exec_block(&p.main_body, 0).map_err(|e| e.to_string())?;
@@ -3044,14 +3046,45 @@ pub fn run_source(src: &str) -> Result<(), String> {
     run_source_inner(src).map_err(|e| e.to_string())
 }
 
+thread_local! {
+    static DEADLINE: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
+    static TICK: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+/// Checked on every loop iteration; looks at the clock once per 1024 iterations.
+fn check_deadline() -> Result<(), Er> {
+    let t = TICK.with(|c| {
+        let v = c.get().wrapping_add(1);
+        c.set(v);
+        v
+    });
+    if t & 1023 == 0 {
+        if let Some(d) = DEADLINE.with(|d| d.get()) {
+            if std::time::Instant::now() >= d {
+                return Err(Er::from("LimitError: time limit exceeded"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Execution limits for embedded calls.
 #[derive(Clone, Debug)]
 pub struct Limits {
     /// Maximum number of loop iterations (while / for) across the whole call, including module-level code.
     pub max_steps: u64,
+    /// Wall-clock budget in milliseconds for the whole call (`None` = unlimited). Checked in loops.
+    pub max_ms: Option<u64>,
 }
 impl Default for Limits {
     fn default() -> Self {
-        Limits { max_steps: u64::MAX }
+        Limits { max_steps: u64::MAX, max_ms: None }
+    }
+}
+
+struct DeadlineReset;
+impl Drop for DeadlineReset {
+    fn drop(&mut self) {
+        DEADLINE.with(|d| d.set(None));
     }
 }

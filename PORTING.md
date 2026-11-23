@@ -199,3 +199,7 @@ RMojo を FastAPI 互換サーバー(MFastAPI)のハンドラ実行系にする�
 ## 2026-11-23 追記: ステップ上限(段階2の一部) / Step limit
 **日本語**: `Limits{max_steps}` と `CompiledProgram::call_limited` を追加。while/for(型付き整数パスを含む)の反復ごとに1減らし、尽きると `LimitError: step limit exceeded`。無限の `while True`(list.append・型付き整数)が止まることを試験で確認、CPython との差分0。**未了**: 経過時間・メモリ上限、再帰以外の大きな単発処理(巨大な `range`・文字列の掛け算)、ForIn の反復、MFastAPI からの呼び出し。
 **English**: Added `Limits{max_steps}` and `call_limited`: each while/for iteration (including the typed-int path) costs one step; at zero the call fails with `LimitError`. Infinite loops now stop (tested); zero differences vs CPython. **Open**: wall-time and memory limits, large one-shot operations, ForIn iterations, and the MFastAPI call path.
+
+## 2026-11-23 追記: 時間上限(段階1の続き) / Wall-time limit
+**日本語**: `Limits` に `max_ms` を追加(ループ1024回ごとに時計を確認、超過で `LimitError: time limit exceeded`)。無限ループ(整数・list.append)が100msで止まる試験を追加、`cargo test` 14件成功、CPython との差分0。**未了**: メモリ上限、巨大な `range`・文字列の掛け算など反復を伴わない単発処理、MFastAPI からの呼び出し(段階2: `rmojo-py`)。
+**English**: Added `Limits.max_ms` (clock checked every 1024 loop iterations; `LimitError: time limit exceeded`). Infinite loops stop at 100 ms (tested); all tests pass, zero diffs vs CPython. **Open**: memory limit, one-shot heavy operations, and the MFastAPI call path (stage 2).
