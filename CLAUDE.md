@@ -149,3 +149,13 @@
 ## 2026-11-24 メモリ上限 / Memory caps
 `MAX_COLL = 20_000_000`(`src/lib.rs`)。`append`・`list*n`・`str*n`・`range` が超えると `MemoryError`。試験 `memory_caps_stop_blowup`。実メモリ(RSS)の上限は未実装。
 `MAX_COLL = 20_000_000`; exceeding it in `append`, `list*n`, `str*n` or `range` raises `MemoryError`. Test: `memory_caps_stop_blowup`. A true RSS cap is not implemented.
+
+## 2026-11-25 現況・未了 / Status and open items
+
+### 日本語
+
+現状: Mojo との互換を目指す言語。見た目は Python 構文、中身は Rust(C++ なし)。最近は実行の上限を追加した(ループ回数、時間 Limits.max_ms、リスト・文字列・range の要素数の上限で MemoryError)。POLICY.md も新設した。残り: Mac・iPhone の実機での確認(ここには実機がありません)。翻訳: AI 翻訳(ja/en 以外)、ネイティブの確認はまだです。
+
+### English
+
+Status: a language aiming at Mojo compatibility: Python syntax on the surface, Rust inside (no C++). Recently it gained execution limits (loop steps, a time limit Limits.max_ms, and element-count caps on lists, strings and ranges that raise MemoryError). POLICY.md was also added. Open: checks on a real Mac and iPhone (no such devices here). Translations: AI-translated (other than ja/en), not yet checked by native speakers.

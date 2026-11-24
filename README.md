@@ -195,3 +195,55 @@ Download: https://github.com/aon-co-jp/RMojo/releases/latest
 ### 2026-11-24 メモリ上限 / Memory caps
 リスト・文字列の増殖(`append`・`*`・`range`)は1つあたり2,000万要素(文字列は×8バイト)で `MemoryError` として止まります(組み込みでも CLI でも)。時間上限と合わせて暴走を防ぎます。
 Lists and strings (`append`, `*`, `range`) stop with `MemoryError` at 20M elements (strings: x8 bytes), in both the embedding API and the CLI, on top of the time limit.
+
+## 2026-11-25 現況・未了 / Status and open items
+
+*日本語・English が基本、ほかの言語は AI 翻訳(ネイティブ確認前)。 / Japanese and English are the base; other languages are AI-translated, not native-checked.*
+
+### 日本語
+
+現状: Mojo との互換を目指す言語。見た目は Python 構文、中身は Rust(C++ なし)。最近は実行の上限を追加した(ループ回数、時間 Limits.max_ms、リスト・文字列・range の要素数の上限で MemoryError)。POLICY.md も新設した。残り: Mac・iPhone の実機での確認(ここには実機がありません)。翻訳: AI 翻訳(ja/en 以外)、ネイティブの確認はまだです。
+
+### English
+
+Status: a language aiming at Mojo compatibility: Python syntax on the surface, Rust inside (no C++). Recently it gained execution limits (loop steps, a time limit Limits.max_ms, and element-count caps on lists, strings and ranges that raise MemoryError). POLICY.md was also added. Open: checks on a real Mac and iPhone (no such devices here). Translations: AI-translated (other than ja/en), not yet checked by native speakers.
+
+### 简体中文
+
+现状:以兼容 Mojo 为目标的语言:外观是 Python 语法,内部是 Rust(没有 C++)。最近新增了执行上限(循环步数、时间上限 Limits.max_ms,以及列表、字符串、range 的元素数上限,超出时抛出 MemoryError)。同时新增了 POLICY.md。待办:在真实的 Mac 和 iPhone 上验证(这里没有这些设备)。翻译:由 AI 翻译,尚未经母语者确认。
+
+### 繁體中文
+
+現況:以相容 Mojo 為目標的語言:外觀是 Python 語法,內部是 Rust(沒有 C++)。最近新增了執行上限(迴圈步數、時間上限 Limits.max_ms,以及清單、字串、range 的元素數上限,超出時擲出 MemoryError)。同時新增了 POLICY.md。待辦:在實體 Mac 和 iPhone 上驗證(這裡沒有這些裝置)。翻譯:由 AI 翻譯,尚未經母語人士確認。
+
+### 한국어
+
+현황: Mojo 호환을 목표로 하는 언어로, 겉모습은 Python 문법이고 내부는 Rust(C++ 없음)입니다. 최근 실행 상한(반복 횟수, 시간 Limits.max_ms, 리스트·문자열·range의 요소 수 상한 초과 시 MemoryError)을 추가했고 POLICY.md도 새로 만들었습니다. 남은 일: 실제 Mac과 iPhone에서의 확인(여기에는 해당 기기가 없습니다). 번역: AI 번역이며 원어민의 확인은 아직 받지 않았습니다.
+
+### Deutsch
+
+Stand: eine Sprache mit dem Ziel der Mojo-Kompatibilität: außen Python-Syntax, innen Rust (ohne C++). Zuletzt kamen Ausführungslimits hinzu (Schleifenschritte, Zeitlimit Limits.max_ms sowie Obergrenzen für Elemente von Listen, Strings und ranges mit MemoryError). Außerdem wurde POLICY.md neu angelegt. Offen: Prüfung auf einem echten Mac und iPhone (solche Geräte haben wir hier nicht). Übersetzungen: KI-übersetzt, noch nicht von Muttersprachlern geprüft.
+
+### Français
+
+État : un langage visant la compatibilité avec Mojo : syntaxe Python en surface, Rust à l'intérieur (sans C++). Récemment, il a reçu des limites d'exécution (pas de boucle, limite de temps Limits.max_ms, plafonds du nombre d'éléments des listes, chaînes et range avec MemoryError). POLICY.md a aussi été créé. Reste à faire : vérifier sur un vrai Mac et un vrai iPhone (nous n'avons pas ces appareils ici). Traductions : faites par IA, pas encore relues par des locuteurs natifs.
+
+### Español
+
+Estado: un lenguaje que busca la compatibilidad con Mojo: sintaxis de Python por fuera y Rust por dentro (sin C++). Hace poco recibió límites de ejecución (pasos de bucle, límite de tiempo Limits.max_ms y topes de elementos en listas, cadenas y range, con MemoryError). También se creó POLICY.md. Pendiente: comprobar en un Mac y un iPhone reales (aquí no tenemos esos dispositivos). Traducciones: hechas por IA, aún sin revisión de hablantes nativos.
+
+### Português
+
+Situação: uma linguagem que busca compatibilidade com Mojo: sintaxe Python por fora e Rust por dentro (sem C++). Recentemente ganhou limites de execução (passos de laço, limite de tempo Limits.max_ms e tetos de elementos em listas, strings e range, com MemoryError). O POLICY.md também foi criado. Pendente: verificar em um Mac e um iPhone de verdade (não temos esses aparelhos aqui). Traduções: feitas por IA, ainda não revisadas por falantes nativos.
+
+### Русский
+
+Состояние: язык, нацеленный на совместимость с Mojo: снаружи синтаксис Python, внутри Rust (без C++). Недавно добавлены ограничения выполнения (число шагов цикла, лимит времени Limits.max_ms, предел числа элементов списков, строк и range с ошибкой MemoryError). Также создан POLICY.md. Осталось: проверка на настоящих Mac и iPhone (таких устройств у нас здесь нет). Переводы: выполнены ИИ, носители языка их пока не проверяли.
+
+### العربية
+
+الوضع: لغة تستهدف التوافق مع Mojo: صياغة Python من الخارج وRust من الداخل (بلا C++). أضيفت مؤخرًا حدود للتنفيذ (عدد خطوات الحلقة، وحد زمني Limits.max_ms، وسقف لعدد عناصر القوائم والسلاسل وrange مع MemoryError). كما أُنشئ ملف POLICY.md. المتبقي: التحقق على جهازَي Mac وiPhone حقيقيين (لا تتوفر لدينا هذه الأجهزة هنا). الترجمات: أنجزها الذكاء الاصطناعي ولم يراجعها بعدُ متحدثون أصليون.
+
+### فارسی
+
+وضعیت: زبانی با هدف سازگاری با Mojo: ظاهر آن نحو Python و درونش Rust (بدون C++) است. اخیراً محدودیت‌های اجرا افزوده شد (تعداد گام حلقه، حد زمانی Limits.max_ms و سقف تعداد عناصر فهرست، رشته و range همراه با MemoryError). فایل POLICY.md نیز ساخته شد. باقی‌مانده: بررسی روی Mac و iPhone واقعی (این دستگاه‌ها را اینجا نداریم). ترجمه‌ها: با هوش مصنوعی انجام شده و هنوز گویشوران بومی آن‌ها را بررسی نکرده‌اند.
