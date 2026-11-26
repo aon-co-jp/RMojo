@@ -31,6 +31,13 @@ struct SqlRt(Movable):
     def handler(mut self, sql: String, params: List[String]) raises -> Int:
         self._open()
         self.rows = List[List[String]]()
+        var head = String("")
+        for part in sql.split():
+            head = String(part).upper()
+            break
+        if head == "COMMIT" or head == "ROLLBACK":
+            if Int(self.lib.call["sqlite3_get_autocommit", Int32](self.db)) != 0:
+                return 0
         var slot = List[Int](length=1, fill=0)
         var s = sql
         var rc = self.lib.call["sqlite3_prepare_v2", Int32](self.db, s.unsafe_ptr(), Int32(-1), slot.unsafe_ptr(), Int(0))

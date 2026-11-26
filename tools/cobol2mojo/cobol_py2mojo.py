@@ -13,6 +13,7 @@ and the program is reported as TODO instead of being converted.
     python cobol_py2mojo.py <programs_dir> <out_dir>
 """
 import ast
+import re
 import sys
 from pathlib import Path
 
@@ -21,6 +22,12 @@ RUNTIME_FIELDS = {"out", "goto", "_fh", "_sort_buf", "_sort_pos", "_cur", "_prep
 
 class Unsupported(Exception):
     pass
+
+
+# pseudo-calls produced by sql_rewrite(); they map to methods of State (or module helpers) in the generated Mojo
+SQLF = {"_sqlh": "Int", "_sqln": "Int", "_cell": "String", "_rcell": "String", "_cellraw": "String", "_rcellraw": "String", "_curidx": "Int", "_curhas": "Bool",
+        "_curpop": "Int", "_prephas": "Bool", "_prepget": "String", "_sqlnum": "Int", "_strip": "String"}
+SQLS = {"_curopen", "_curload", "_curadv", "_prepset"}  # statement-only pseudo-calls
 
 
 HELPERS = r'''
@@ -338,6 +345,8 @@ class Conv:
             if self.selfcall(e, "f_pack"):
                 return "String"
             if isinstance(f, ast.Name):
+                if f.id in SQLF:
+                    return SQLF[f.id]
                 if f.id in ("_tdiv", "_rdiv", "abs", "max", "len"):
                     return "Int"
                 if f.id in ("_fmt", "str"):
@@ -345,7 +354,7 @@ class Conv:
                 if f.id == "next" and self._leading_args(e):
                     return "Int"
             if isinstance(f, ast.Attribute):
-                if f.attr in ("join", "replace", "upper", "lstrip"):
+                if f.attr in ("join", "replace", "upper", "lstrip", "strip"):
                     return "String"
                 if f.attr in ("count", "find"):
                     return "Int"
@@ -354,6 +363,18 @@ class Conv:
                 if f.attr == "isdigit":
                     return "Bool"
         raise Unsupported("expr " + ast.dump(e)[:60])
+
+    def sqlcall(self, e):
+        f, a = e.func.id, e.args
+        parts = []
+        for i, x in enumerate(a):
+            if isinstance(x, ast.List):
+                parts.append("_sl" + str(len(x.elts)) + "(" + ", ".join(self.sexpr(y) for y in x.elts) + ")")
+            elif self.typ(x) == "String":
+                parts.append(self.sexpr(x))
+            else:
+                parts.append(self.expr(x))
+        return ("" if f == "_sqlnum" else "self.") + f + "(" + ", ".join(parts) + ")"
 
     def fidx(self, a):
         if not (isinstance(a, ast.Constant) and a.value in self.files):
@@ -365,13 +386,14 @@ class Conv:
         return (isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute) and isinstance(e.func.value, ast.Name)
                 and e.func.value.id == "self" and e.func.attr == name)
 
+    pure_mode = False
     PY_NAMES = {"_c", "_row", "_cur", "SQL_HANDLER", "SQL_NULL", "_sqlnum"}
     PY_ATTRS = {"_cur", "_prep", "call_ext"}
 
     def is_py(self, node):
         """True when the node needs the Python runtime (SQL handler, cursors, CALL registry)."""
         for n in ast.walk(node):
-            if isinstance(n, ast.Name) and n.id in self.PY_NAMES:
+            if isinstance(n, ast.Name) and n.id in self.PY_NAMES and not (self.pure_mode and n.id == "_sqlnum"):
                 return True
             if isinstance(n, ast.Tuple) and isinstance(getattr(n, "ctx", None), ast.Store):
                 return True
@@ -408,7 +430,7 @@ class Conv:
         if isinstance(e, ast.Constant):
             self.typ(e)
             if isinstance(e.value, str):
-                s = e.value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+                s = e.value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\x00", "\\x00")
                 return 'String("' + s + '")'
             return str(e.value)
         if isinstance(e, ast.Attribute):
@@ -454,6 +476,8 @@ class Conv:
                 return "self._fread(" + self.fidx(a[0]) + ")"
             if self.selfcall(e, "f_pack") and len(a) == 1:
                 return "self._fpack(" + self.fidx(a[0]) + ")"
+            if isinstance(f, ast.Name) and f.id in SQLF:
+                return self.sqlcall(e)
             if isinstance(f, ast.Name):
                 if f.id in ("_tdiv", "_rdiv", "_fmt"):
                     if len(a) != 2:
@@ -484,6 +508,8 @@ class Conv:
                     return "_replace(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ", " + self.sexpr(a[1]) + ")"
                 if f.attr == "upper" and not a:
                     return "_upper(" + self.sexpr(obj) + ")"
+                if f.attr == "strip" and not a:
+                    return "_strip(" + self.sexpr(obj) + ")"
                 if f.attr == "count" and len(a) == 1:
                     return "_count(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ")"
                 if f.attr == "find" and len(a) in (1, 2):
@@ -639,6 +665,9 @@ class Conv:
                 # EXTERNAL is empty in the generated module, so Python raises NotImplementedError here.
                 out.append(p + 'raise Error("COBOL_to: CALL ' + v.args[0].value
                            + ' は EXTERNAL に登録されていない")')
+                return
+            if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in SQLS:
+                out.append(p + self.sqlcall(v))
                 return
             a = v.args if isinstance(v, ast.Call) else []
             for nm, mj in (("f_open", "_fopen"), ("f_close", "_fclose"), ("f_write", "_fwrite")):
@@ -817,6 +846,355 @@ def file_methods(files, fields):
     return o
 
 
+_CELL_R = re.compile(r"_r\[0\]\[(\d+)\] if len\(_r\[0\]\) > (\d+) else ''")
+_CELL_ROW = re.compile(r"_row\[(\d+)\] if len\(_row\) > (\d+) else ''")
+
+
+def _call(name, *args):
+    return ast.Call(func=ast.Name(id=name, ctx=ast.Load()), args=list(args), keywords=[])
+
+
+def _nm(n):
+    return ast.Name(id=n, ctx=ast.Load())
+
+
+class _X(ast.NodeTransformer):
+    """expression rewrite: SQL runtime names -> pseudo-calls (see SQLF)."""
+
+    def __init__(self, r_is_sql):
+        self.r_is_sql = r_is_sql
+
+    def visit_Name(self, n):
+        if n.id == "SQL_NULL":
+            return ast.Constant("\x00NULL")
+        if n.id == "_c":
+            return ast.Name(id="_sc", ctx=n.ctx)
+        if n.id == "_r" and self.r_is_sql and isinstance(n.ctx, ast.Load):
+            return ast.Compare(left=_nm("_rn"), ops=[ast.Gt()], comparators=[ast.Constant(0)])
+        return n
+
+    def visit_IfExp(self, n):
+        t = ast.unparse(n)
+        m = _CELL_R.fullmatch(ast.unparse(n)) or _CELL_ROW.fullmatch(ast.unparse(n))
+        if m and m.group(1) == m.group(2):
+            return _call("_cell" if "_r[0]" in t else "_rcell", ast.Constant(int(m.group(1))))
+        return self.generic_visit(n)
+
+    def visit_Compare(self, n):
+        if (len(n.ops) == 1 and isinstance(n.ops[0], ast.Eq) and isinstance(n.comparators[0], ast.Name)
+                and n.comparators[0].id == "SQL_NULL"):
+            lt = ast.unparse(n.left)
+            m = _CELL_R.fullmatch(lt) or _CELL_ROW.fullmatch(lt)
+            if m and m.group(1) == m.group(2):
+                return ast.Compare(left=_call("_cellraw" if "_r[0]" in lt else "_rcellraw", ast.Constant(int(m.group(1)))),
+                                   ops=n.ops, comparators=[ast.Constant("\x00NULL")])
+        if ast.unparse(n) == "_cur is not None":
+            return ast.Compare(left=_nm("_ci"), ops=[ast.GtE()], comparators=[ast.Constant(0)])
+        m = re.fullmatch(r"self\._cur\.pop\('([^']*)', None\) is not None", ast.unparse(n))
+        if m:
+            return ast.Compare(left=_call("_curpop", ast.Constant(m.group(1))), ops=[ast.NotEq()], comparators=[ast.Constant(0)])
+        m = re.fullmatch(r"'([^']*)' in self\._prep", ast.unparse(n))
+        if m:
+            return _call("_prephas", ast.Constant(m.group(1)))
+        return self.generic_visit(n)
+
+    def visit_BoolOp(self, n):
+        if ast.unparse(n) == "_cur is not None and _cur[1] < len(_cur[0])":
+            return _call("_curhas", _nm("_ci"))
+        return self.generic_visit(n)
+
+    def visit_Subscript(self, n):
+        m = re.fullmatch(r"self\._prep\['([^']*)'\]", ast.unparse(n))
+        if m:
+            return _call("_prepget", ast.Constant(m.group(1)))
+        return self.generic_visit(n)
+
+
+def sql_rewrite(body):
+    """Rewrite SQL statements of one paragraph to pseudo-calls. Raises Unsupported on a shape it does not know."""
+    state = {"r_sql": False}
+
+    def x(e):
+        return ast.fix_missing_locations(_X(state["r_sql"]).visit(e))
+
+    def stmts(b):
+        o = []
+        for st in b:
+            o.extend(stmt(st))
+        return o
+
+    def stmt(st):
+        if isinstance(st, ast.Assign) and len(st.targets) == 1:
+            t, v = st.targets[0], st.value
+            if (isinstance(t, ast.Tuple) and ast.unparse(t) == "(_c, _r)" and isinstance(v, ast.Call)
+                    and isinstance(v.func, ast.Name) and v.func.id == "SQL_HANDLER" and len(v.args) == 2):
+                state["r_sql"] = True
+                return [ast.Assign(targets=[ast.Name(id="_sc", ctx=ast.Store())], value=_call("_sqlh", x(v.args[0]), x(v.args[1])), lineno=0),
+                        ast.Assign(targets=[ast.Name(id="_rn", ctx=ast.Store())], value=_call("_sqln"), lineno=0)]
+            if isinstance(t, ast.Name) and t.id == "_r":
+                state["r_sql"] = False
+            if isinstance(t, ast.Name) and t.id == "_cur":
+                m = re.fullmatch(r"self\._cur\.get\('([^']*)'\)", ast.unparse(v))
+                if not m:
+                    raise Unsupported("cursor get")
+                return [ast.Assign(targets=[ast.Name(id="_ci", ctx=ast.Store())], value=_call("_curidx", ast.Constant(m.group(1))), lineno=0)]
+            if isinstance(t, ast.Name) and t.id == "_row":
+                return [ast.Expr(_call("_curload", _nm("_ci")))]
+            m = re.fullmatch(r"self\._cur\['([^']*)'\]", ast.unparse(t))
+            if m:
+                if ast.unparse(v) != "[_r, 0]":
+                    raise Unsupported("cursor open")
+                return [ast.Expr(_call("_curopen", ast.Constant(m.group(1))))]
+            m = re.fullmatch(r"self\._prep\['([^']*)'\]", ast.unparse(t))
+            if m:
+                return [ast.Expr(_call("_prepset", ast.Constant(m.group(1)), x(v)))]
+            st.value = x(v)
+            return [st]
+        if isinstance(st, ast.AugAssign) and ast.unparse(st.target) == "_cur[1]":
+            return [ast.Expr(_call("_curadv", _nm("_ci")))]
+        if isinstance(st, ast.If):
+            st.test = x(st.test)
+            st.body = stmts(st.body)
+            st.orelse = stmts(st.orelse)
+            return [st]
+        if isinstance(st, ast.While):
+            st.test = x(st.test)
+            st.body = stmts(st.body)
+            return [st]
+        if isinstance(st, (ast.Assign, ast.AugAssign, ast.Expr)):
+            return [ast.fix_missing_locations(_X(state["r_sql"]).visit(st))]
+        return [st]
+
+    return stmts(body)
+
+
+SQL_STATE_FIELDS = ["_sql: SqlRt", "_curs: List[List[List[String]]]", "_curn: List[String]", "_curp: List[Int]",
+                    "_row: List[String]", "_prn: List[String]", "_prv: List[String]"]
+
+
+def sql_runtime_src():
+    t = (Path(__file__).parent / "c2m_sql.mojo").read_text(encoding="utf-8")
+    a, b = t.index("comptime SQL_NULL"), t.index("def main() raises:")
+    return "from std.ffi import OwnedDLHandle\nfrom std.memory import Pointer\n\n" + t[a:b]
+
+
+def sql_methods():
+    return """
+    def _sqlh(mut self, sql: String, params: List[String]) raises -> Int:
+        return self._sql.handler(sql, params)
+
+    def _sqln(self) -> Int:
+        return len(self._sql.rows)
+
+    def _cell(self, i: Int) -> String:
+        if len(self._sql.rows) == 0 or len(self._sql.rows[0]) <= i:
+            return String("")
+        var v = self._sql.rows[0][i]
+        if v == SQL_NULL:
+            return String("")
+        return v
+
+    def _cellraw(self, i: Int) -> String:
+        if len(self._sql.rows) == 0 or len(self._sql.rows[0]) <= i:
+            return String("")
+        return self._sql.rows[0][i]
+
+    def _rcellraw(self, i: Int) -> String:
+        if len(self._row) <= i:
+            return String("")
+        return self._row[i]
+
+    def _rcell(self, i: Int) -> String:
+        if len(self._row) <= i:
+            return String("")
+        var v = self._row[i]
+        if v == SQL_NULL:
+            return String("")
+        return v
+
+    def _curopen(mut self, name: String):
+        for k in range(len(self._curn)):
+            if self._curn[k] == name:
+                self._curs[k] = self._sql.rows.copy()
+                self._curp[k] = 0
+                return
+        self._curn.append(name)
+        self._curs.append(self._sql.rows.copy())
+        self._curp.append(0)
+
+    def _curidx(self, name: String) -> Int:
+        for k in range(len(self._curn)):
+            if self._curn[k] == name:
+                return k
+        return -1
+
+    def _curhas(self, ci: Int) -> Bool:
+        return ci >= 0 and self._curp[ci] < len(self._curs[ci])
+
+    def _curload(mut self, ci: Int):
+        self._row = self._curs[ci][self._curp[ci]].copy()
+
+    def _curadv(mut self, ci: Int):
+        self._curp[ci] += 1
+
+    def _curpop(mut self, name: String) -> Int:
+        var k = self._curidx(name)
+        if k < 0:
+            return 0
+        self._curn[k] = String("_closed_")
+        self._curs[k] = List[List[String]]()
+        return 1
+
+    def _prepset(mut self, name: String, sql: String):
+        for k in range(len(self._prn)):
+            if self._prn[k] == name:
+                self._prv[k] = sql
+                return
+        self._prn.append(name)
+        self._prv.append(sql)
+
+    def _prephas(self, name: String) -> Bool:
+        for k in range(len(self._prn)):
+            if self._prn[k] == name:
+                return True
+        return False
+
+    def _prepget(self, name: String) -> String:
+        for k in range(len(self._prn)):
+            if self._prn[k] == name:
+                return self._prv[k]
+        return String("")
+""".split("\n")
+
+
+SQL_HELPERS = r'''
+def _sl0() -> List[String]:
+    var r = List[String]()
+    return r^
+
+def _sl1(a0: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    return r^
+
+def _sl2(a0: String, a1: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    return r^
+
+def _sl3(a0: String, a1: String, a2: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    return r^
+
+def _sl4(a0: String, a1: String, a2: String, a3: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    r.append(a3)
+    return r^
+
+def _sl5(a0: String, a1: String, a2: String, a3: String, a4: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    r.append(a3)
+    r.append(a4)
+    return r^
+
+def _sl6(a0: String, a1: String, a2: String, a3: String, a4: String, a5: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    r.append(a3)
+    r.append(a4)
+    r.append(a5)
+    return r^
+
+def _sl7(a0: String, a1: String, a2: String, a3: String, a4: String, a5: String, a6: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    r.append(a3)
+    r.append(a4)
+    r.append(a5)
+    r.append(a6)
+    return r^
+
+def _sl8(a0: String, a1: String, a2: String, a3: String, a4: String, a5: String, a6: String, a7: String) -> List[String]:
+    var r = List[String]()
+    r.append(a0)
+    r.append(a1)
+    r.append(a2)
+    r.append(a3)
+    r.append(a4)
+    r.append(a5)
+    r.append(a6)
+    r.append(a7)
+    return r^
+
+
+def _strip(t: String) -> String:
+    var b = t.as_bytes()
+    var lo = 0
+    var hi = len(b)
+    while lo < hi and (b[lo] == 32 or b[lo] == 9 or b[lo] == 10 or b[lo] == 13):
+        lo += 1
+    while hi > lo and (b[hi - 1] == 32 or b[hi - 1] == 9 or b[hi - 1] == 10 or b[hi - 1] == 13):
+        hi -= 1
+    return _slice(t, lo, hi)
+
+
+def _sqlnum(x: String, scale: Int) -> Int:
+    # Python: int((Decimal(str(x).strip()) * 10**s).to_integral_value(ROUND_DOWN)), 0 when it is not a number
+    var t = _strip(x)
+    var b = t.as_bytes()
+    var n = len(b)
+    if n == 0:
+        return 0
+    var i = 0
+    var neg = False
+    if b[0] == 45 or b[0] == 43:
+        neg = b[0] == 45
+        i = 1
+    var ip = 0
+    var nd = 0
+    while i < n and b[i] >= 48 and b[i] <= 57:
+        ip = ip * 10 + Int(b[i]) - 48
+        nd += 1
+        i += 1
+    var fp = 0
+    var fd = 0
+    if i < n and b[i] == 46:
+        i += 1
+        while i < n and b[i] >= 48 and b[i] <= 57:
+            if fd < scale:
+                fp = fp * 10 + Int(b[i]) - 48
+                fd += 1
+            nd += 1
+            i += 1
+    if i != n or nd == 0:
+        return 0
+    while fd < scale:
+        fp = fp * 10
+        fd += 1
+    var p10 = 1
+    for _ in range(scale):
+        p10 = p10 * 10
+    var v = ip * p10 + fp
+    if neg:
+        return -v
+    return v
+'''
+
+
 def bridge_methods(src, fields):
     """Embedded Python runtime: the COBOL_to module source is exec'd once, SQL / CALL statements run there."""
     esc = src.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
@@ -906,15 +1284,39 @@ def convert(src: str) -> str:
     c = Conv(fields)
     c.files = files or {}
     c.bridge = any(c.is_py(st) for m in methods.values() if m.name.startswith("p_") for st in ast.walk(m))
+    c.sqlpure = False
+    if c.bridge:  # try to translate the SQL statements natively (no embedded Python); fall back to the bridge
+        import copy
+        saved = {n: copy.deepcopy(m.body) for n, m in methods.items() if n.startswith("p_")}
+        try:
+            for n in saved:
+                methods[n].body = sql_rewrite(methods[n].body)
+                ast.fix_missing_locations(methods[n])
+            c.pure_mode = True
+            if not any(c.is_py(st) for n, m in methods.items() if n.startswith("p_") for st in ast.walk(m)):
+                c.bridge, c.sqlpure = False, True
+        except Unsupported:
+            pass
+        c.pure_mode = False
+        if not c.sqlpure:
+            for n, b in saved.items():
+                methods[n].body = b
     o = ["# Generated by RMojo tools/cobol2mojo from COBOL_to Python output.",
          "from std.python import Python, PythonObject", HELPERS, "",
+         ] + ([SQL_HELPERS, sql_runtime_src(), ""] if c.sqlpure else []) + [
          "struct State:", "    var out: String", "    var goto: String"]
     for n, t in fields.items():
         o.append("    var " + n + ": " + t)
+    if c.sqlpure:
+        o += ["    var " + f for f in SQL_STATE_FIELDS]
     if c.bridge:
         o.append("    var _py: PythonObject")
     o += ["    var _fm: List[Int]", "    var _fp: List[Int]", "    var _fd: List[String]", "    var _fw: List[String]"]
-    o += ["", "    def __init__(out self):", '        self.out = String("")', '        self.goto = String("")']
+    o += ["", "    def __init__(out self)" + (" raises" if c.sqlpure else "") + ":", '        self.out = String("")', '        self.goto = String("")']
+    if c.sqlpure:
+        o += ["        self._sql = SqlRt()", "        self._curs = List[List[List[String]]]()", "        self._curn = List[String]()",
+              "        self._curp = List[Int]()", "        self._row = List[String]()", "        self._prn = List[String]()",
+              "        self._prv = List[String]()"]
     if c.bridge:
         o.append("        self._py = PythonObject(None)")
     o += ["        self._sort_buf = List[String]()", "        self._sort_pos = 0", "        self._fm = List[Int]()",
@@ -943,6 +1345,8 @@ def convert(src: str) -> str:
         o += body
     if True:
         o += file_methods(files or {}, fields)
+    if c.sqlpure:
+        o += sql_methods()
     if c.bridge:
         o += bridge_methods(src, fields)
     # dispatcher + main loop (same semantics as the Python main())
