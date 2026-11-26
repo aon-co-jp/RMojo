@@ -392,7 +392,10 @@ class Conv:
 
     def is_py(self, node):
         """True when the node needs the Python runtime (SQL handler, cursors, CALL registry)."""
+        for_targets = {id(n.target) for n in ast.walk(node) if isinstance(n, ast.For)}  # file SORT/MERGE loops are native
         for n in ast.walk(node):
+            if id(n) in for_targets:
+                continue
             if isinstance(n, ast.Name) and n.id in self.PY_NAMES and not (self.pure_mode and n.id == "_sqlnum"):
                 return True
             if isinstance(n, ast.Tuple) and isinstance(getattr(n, "ctx", None), ast.Store):
@@ -1283,7 +1286,7 @@ def convert(src: str) -> str:
     fields["_sort_pos"] = "Int"
     c = Conv(fields)
     c.files = files or {}
-    c.bridge = any(c.is_py(st) for m in methods.values() if m.name.startswith("p_") for st in ast.walk(m))
+    c.bridge = any(c.is_py(m) for m in methods.values() if m.name.startswith("p_"))
     c.sqlpure = False
     if c.bridge:  # try to translate the SQL statements natively (no embedded Python); fall back to the bridge
         import copy
@@ -1293,7 +1296,7 @@ def convert(src: str) -> str:
                 methods[n].body = sql_rewrite(methods[n].body)
                 ast.fix_missing_locations(methods[n])
             c.pure_mode = True
-            if not any(c.is_py(st) for n, m in methods.items() if n.startswith("p_") for st in ast.walk(m)):
+            if not any(c.is_py(m) for n, m in methods.items() if n.startswith("p_")):
                 c.bridge, c.sqlpure = False, True
         except Unsupported:
             pass
