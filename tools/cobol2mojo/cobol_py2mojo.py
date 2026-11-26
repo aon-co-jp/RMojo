@@ -23,7 +23,7 @@ class Unsupported(Exception):
     pass
 
 
-HELPERS = '''
+HELPERS = r'''
 def _tdiv(a: Int, b: Int) -> Int:
     var q = abs(a) // abs(b)
     if (a < 0) == (b < 0):
@@ -45,12 +45,239 @@ def _fmt(v: Int, s: Int) -> String:
     var n = d.byte_length()
     var sign = String("-") if v < 0 else String("")
     return sign + String(d[byte=0 : n - s]) + "." + String(d[byte=n - s : n])
+
+
+def _slice(t: String, a0: Int, b0: Int) -> String:
+    var n = t.byte_length()
+    var a = a0
+    var b = b0
+    if a < 0:
+        a = 0
+    if b > n:
+        b = n
+    if a >= b:
+        return String("")
+    return String(t[byte=a:b])
+
+
+def _find(t: String, sub: String, start: Int) -> Int:
+    var n = t.byte_length()
+    var m = sub.byte_length()
+    var i = start
+    if i < 0:
+        i = 0
+    while i + m <= n:
+        if _slice(t, i, i + m) == sub:
+            return i
+        i += 1
+    return -1
+
+
+def _count(t: String, sub: String) -> Int:
+    var c = 0
+    var i = 0
+    var m = sub.byte_length()
+    if m == 0:
+        return t.byte_length() + 1
+    while True:
+        var j = _find(t, sub, i)
+        if j < 0:
+            return c
+        c += 1
+        i = j + m
+
+
+def _replace(t: String, a: String, b: String) -> String:
+    var r = String("")
+    var i = 0
+    var m = a.byte_length()
+    while True:
+        var j = _find(t, a, i)
+        if j < 0 or m == 0:
+            return r + _slice(t, i, t.byte_length())
+        r += _slice(t, i, j) + b
+        i = j + m
+
+
+def _split(t: String, sep: String) -> List[String]:
+    var r = List[String]()
+    var i = 0
+    var m = sep.byte_length()
+    while True:
+        var j = _find(t, sep, i)
+        if j < 0:
+            r.append(_slice(t, i, t.byte_length()))
+            return r^
+        r.append(_slice(t, i, j))
+        i = j + m
+
+
+def _upper(t: String) -> String:
+    var r = String("")
+    for i in range(t.byte_length()):
+        var c = ord(_slice(t, i, i + 1))
+        if c >= 97 and c <= 122:
+            c -= 32
+        r += chr(c)
+    return r
+
+
+def _isnum(t: String) -> Bool:
+    var i = 0
+    var n = t.byte_length()
+    while i < n and _slice(t, i, i + 1) == "-":
+        i += 1
+    if i >= n:
+        return False
+    while i < n:
+        var c = ord(_slice(t, i, i + 1))
+        if c < 48 or c > 57:
+            return False
+        i += 1
+    return True
+
+
+def _leading(t: String, sub: String) -> Int:
+    var m = sub.byte_length()
+    if m == 0:
+        return 0
+    var k = 0
+    while _slice(t, k * m, k * m + m) == sub:
+        k += 1
+    return k
+
+
+def _rep(t: String, n: Int) -> String:
+    var r = String("")
+    for _ in range(n):
+        r += t
+    return r
+
+def _num(x: String) -> Int:
+    # Python: int(str(x).strip()), 0 on ValueError
+    var a = 0
+    var b = x.byte_length()
+    while a < b and (_slice(x, a, a + 1) == " " or _slice(x, a, a + 1) == "\t"):
+        a += 1
+    while b > a and (_slice(x, b - 1, b) == " " or _slice(x, b - 1, b) == "\t"):
+        b -= 1
+    var neg = False
+    if a < b and (_slice(x, a, a + 1) == "-" or _slice(x, a, a + 1) == "+"):
+        neg = _slice(x, a, a + 1) == "-"
+        a += 1
+    if a >= b:
+        return 0
+    var v = 0
+    for i in range(a, b):
+        var c = ord(_slice(x, i, i + 1))
+        if c < 48 or c > 57:
+            return 0
+        v = v * 10 + (c - 48)
+    return -v if neg else v
+
+
+def _rstrip(x: String) -> String:
+    var b = x.byte_length()
+    while b > 0:
+        var c = _slice(x, b - 1, b)
+        if c != " " and c != "\t" and c != "\n" and c != "\r":
+            break
+        b -= 1
+    return _slice(x, 0, b)
+
+
+def _rjust0(x: String, w: Int) -> String:
+    var r = x
+    while r.byte_length() < w:
+        r = "0" + r
+    return r
+
+
+def _ljust(x: String, w: Int) -> String:
+    var r = x
+    while r.byte_length() < w:
+        r += " "
+    return r
+
+
+def _readfile(path: String) raises -> String:
+    with open(path, "r") as f:
+        return f.read()
+
+
+def _writefile(path: String, data: String) raises:
+    with open(path, "w") as f:
+        f.write(data)
+
+
+def _readlines(path: String) raises -> List[String]:
+    # Python: [_l.rstrip("\r\n") for _l in open(path)]
+    var r = List[String]()
+    var t = _readfile(path)
+    var i = 0
+    var n = t.byte_length()
+    while i < n:
+        var j = _find(t, "\n", i)
+        var e = n if j < 0 else j
+        var line = _slice(t, i, e)
+        while line.byte_length() > 0 and _slice(line, line.byte_length() - 1, line.byte_length()) == "\r":
+            line = _slice(line, 0, line.byte_length() - 1)
+        r.append(line)
+        i = n if j < 0 else j + 1
+    return r^
+
+
+def _skey_lt(a: String, b: String, o: Int, w: Int, nm: Bool) -> Bool:
+    if nm:
+        return _num(_slice(a, o, o + w)) < _num(_slice(b, o, o + w))
+    return _slice(a, o, o + w) < _slice(b, o, o + w)
+
+
+def _sort_by(mut buf: List[String], o: Int, w: Int, nm: Bool, ds: Bool):
+    # stable insertion sort == Python list.sort(key=..., reverse=ds)
+    for i in range(1, len(buf)):
+        var x = buf[i]
+        var j = i - 1
+        while j >= 0:
+            var before = _skey_lt(buf[j], x, o, w, nm) if ds else _skey_lt(x, buf[j], o, w, nm)
+            if not before:
+                break
+            buf[j + 1] = buf[j]
+            j -= 1
+        buf[j + 1] = x
 '''
 
 
 class Conv:
     def __init__(self, fields):
-        self.fields = fields  # name -> "Int" | "String"
+        self.fields = fields  # name -> "Int" | "String" | "List[Int]"
+        self.locals = {}      # per-method local name -> type
+
+    # ---- helpers for recognising generated idioms --------------------
+    @staticmethod
+    def _is_str_call(e):
+        return isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == "str" and len(e.args) == 1
+
+    def _leading_args(self, e):
+        # next((_k for _k in range(...) if not S.startswith(SUB, _k * len(SUB))), 0)
+        if not (isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id == "next" and len(e.args) == 2
+                and isinstance(e.args[0], ast.GeneratorExp)):
+            return None
+        g = e.args[0].generators[0]
+        if len(g.ifs) != 1 or not (isinstance(g.ifs[0], ast.UnaryOp) and isinstance(g.ifs[0].op, ast.Not)):
+            return None
+        c = g.ifs[0].operand
+        if not (isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "startswith"):
+            return None
+        return c.func.value, c.args[0]
+
+    @staticmethod
+    def _pow_const(e):
+        if (isinstance(e, ast.BinOp) and isinstance(e.op, ast.Pow) and isinstance(e.left, ast.Constant)
+                and isinstance(e.right, ast.Constant) and isinstance(e.left.value, int)
+                and isinstance(e.right.value, int)):
+            return e.left.value ** e.right.value
+        return None
 
     # ---- expressions -------------------------------------------------
     def typ(self, e):
@@ -64,23 +291,78 @@ class Conv:
             raise Unsupported("constant " + repr(e.value))
         if isinstance(e, ast.Attribute):
             return self.field(e)[1]
-        if isinstance(e, ast.Name) and e.id == "_r":
-            return "Int"
+        if isinstance(e, ast.Name):
+            if e.id == "_r":
+                return "Int"
+            if e.id in self.locals:
+                return self.locals[e.id]
+            raise Unsupported("name " + e.id)
+        if isinstance(e, ast.Subscript):
+            if isinstance(e.slice, ast.Slice):
+                if self.typ(e.value) != "String":
+                    raise Unsupported("slice of non-string")
+                return "String"
+            vt = self.typ(e.value)
+            if vt == "List[Int]":
+                return "Int"
+            if vt == "List[String]":
+                return "String"
+            raise Unsupported("subscript")
         if isinstance(e, ast.BinOp):
+            if self._pow_const(e) is not None:
+                return "Int"
             l, r = self.typ(e.left), self.typ(e.right)
-            if l == r == "Int":
+            if l == r == "Int" and type(e.op) in (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv):
                 return "Int"
             if l == r == "String" and isinstance(e.op, ast.Add):
                 return "String"
-            raise Unsupported("mixed binop")
+            if l == "String" and r == "Int" and isinstance(e.op, ast.Mult):
+                return "String"
+            raise Unsupported("binop")
         if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.USub):
             return "Int"
-        if isinstance(e, ast.Call) and isinstance(e.func, ast.Name):
-            if e.func.id in ("_tdiv", "_rdiv"):
-                return "Int"
-            if e.func.id == "_fmt":
+        if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.Not):
+            return "Bool"
+        if isinstance(e, ast.IfExp):
+            a, b = self.typ(e.body), self.typ(e.orelse)
+            if a != b:
+                raise Unsupported("ifexp types")
+            return a
+        if isinstance(e, (ast.Compare, ast.BoolOp)):
+            return "Bool"
+        if isinstance(e, ast.Call):
+            f = e.func
+            if self.selfcall(e, "f_read"):
+                return "Bool"
+            if self.selfcall(e, "f_pack"):
                 return "String"
+            if isinstance(f, ast.Name):
+                if f.id in ("_tdiv", "_rdiv", "abs", "max", "len"):
+                    return "Int"
+                if f.id in ("_fmt", "str"):
+                    return "String"
+                if f.id == "next" and self._leading_args(e):
+                    return "Int"
+            if isinstance(f, ast.Attribute):
+                if f.attr in ("join", "replace", "upper", "lstrip"):
+                    return "String"
+                if f.attr in ("count", "find"):
+                    return "Int"
+                if f.attr == "split":
+                    return "List[String]"
+                if f.attr == "isdigit":
+                    return "Bool"
         raise Unsupported("expr " + ast.dump(e)[:60])
+
+    def fidx(self, a):
+        if not (isinstance(a, ast.Constant) and a.value in self.files):
+            raise Unsupported("file name " + ast.dump(a)[:40])
+        return str(list(self.files).index(a.value))
+
+    @staticmethod
+    def selfcall(e, name):
+        return (isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute) and isinstance(e.func.value, ast.Name)
+                and e.func.value.id == "self" and e.func.attr == name)
 
     def field(self, e):
         if not (isinstance(e, ast.Attribute) and isinstance(e.value, ast.Name) and e.value.id == "self"):
@@ -91,6 +373,17 @@ class Conv:
             raise Unsupported("field " + e.attr)
         return "self." + e.attr, self.fields[e.attr]
 
+    def sexpr(self, e):
+        """expression converted to a String (Python str(x))."""
+        while self._is_str_call(e):
+            e = e.args[0]
+        t = self.typ(e)
+        if t == "Int":
+            return "String(" + self.expr(e) + ")"
+        if t == "String":
+            return self.expr(e)
+        raise Unsupported("str() of " + t)
+
     def expr(self, e):
         if isinstance(e, ast.Constant):
             self.typ(e)
@@ -100,21 +393,89 @@ class Conv:
             return str(e.value)
         if isinstance(e, ast.Attribute):
             return self.field(e)[0]
-        if isinstance(e, ast.Name) and e.id == "_r":
-            return "_r"
-        if isinstance(e, ast.BinOp):
+        if isinstance(e, ast.Name):
             self.typ(e)
-            ops = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*"}
-            op = ops.get(type(e.op))
-            if op is None:
-                raise Unsupported("operator " + type(e.op).__name__)
-            return "(" + self.expr(e.left) + " " + op + " " + self.expr(e.right) + ")"
+            return e.id
+        if isinstance(e, ast.Subscript):
+            if isinstance(e.slice, ast.Slice):
+                sl = e.slice
+                if sl.step is not None:
+                    raise Unsupported("slice step")
+                self.typ(e)
+                v = self.expr(e.value)
+                lo = self.expr(sl.lower) if sl.lower is not None else "0"
+                hi = self.expr(sl.upper) if sl.upper is not None else v + ".byte_length()"
+                return "_slice(" + v + ", " + lo + ", " + hi + ")"
+            self.typ(e)
+            if self.typ(e.slice) != "Int":
+                raise Unsupported("index type")
+            return self.expr(e.value) + "[" + self.expr(e.slice) + "]"
+        if isinstance(e, ast.BinOp):
+            pc = self._pow_const(e)
+            if pc is not None:
+                return str(pc)
+            t = self.typ(e)
+            if t == "String" and isinstance(e.op, ast.Mult):
+                return "_rep(" + self.sexpr(e.left) + ", " + self.expr(e.right) + ")"
+            if t == "String":
+                return "(" + self.sexpr(e.left) + " + " + self.sexpr(e.right) + ")"
+            ops = {ast.Add: "+", ast.Sub: "-", ast.Mult: "*", ast.FloorDiv: "//"}
+            return "(" + self.expr(e.left) + " " + ops[type(e.op)] + " " + self.expr(e.right) + ")"
         if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.USub):
             return "(-" + self.expr(e.operand) + ")"
-        if isinstance(e, ast.Call) and isinstance(e.func, ast.Name) and e.func.id in ("_tdiv", "_rdiv", "_fmt"):
-            if len(e.args) != 2:
-                raise Unsupported("helper arity")
-            return e.func.id + "(" + self.expr(e.args[0]) + ", " + self.expr(e.args[1]) + ")"
+        if isinstance(e, ast.IfExp):
+            self.typ(e)
+            return "(" + self.expr(e.body) + " if " + self.cond(e.test) + " else " + self.expr(e.orelse) + ")"
+        if isinstance(e, (ast.Compare, ast.BoolOp)) or (isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.Not)):
+            return self.cond(e)
+        if isinstance(e, ast.Call):
+            f, a = e.func, e.args
+            if self.selfcall(e, "f_read") and len(a) == 1:
+                return "self._fread(" + self.fidx(a[0]) + ")"
+            if self.selfcall(e, "f_pack") and len(a) == 1:
+                return "self._fpack(" + self.fidx(a[0]) + ")"
+            if isinstance(f, ast.Name):
+                if f.id in ("_tdiv", "_rdiv", "_fmt"):
+                    if len(a) != 2:
+                        raise Unsupported("helper arity")
+                    return f.id + "(" + self.expr(a[0]) + ", " + self.expr(a[1]) + ")"
+                if f.id == "abs" and len(a) == 1 and self.typ(a[0]) == "Int":
+                    return "abs(" + self.expr(a[0]) + ")"
+                if f.id == "max" and len(a) == 2 and self.typ(a[0]) == self.typ(a[1]) == "Int":
+                    return "max(" + self.expr(a[0]) + ", " + self.expr(a[1]) + ")"
+                if f.id == "len" and len(a) == 1:
+                    t = self.typ(a[0])
+                    if t == "String":
+                        return self.sexpr(a[0]) + ".byte_length()"
+                    if t.startswith("List"):
+                        return "len(" + self.expr(a[0]) + ")"
+                if f.id == "str" and len(a) == 1:
+                    return self.sexpr(e)
+                if f.id == "next":
+                    la = self._leading_args(e)
+                    if la and isinstance(a[1], ast.Constant) and a[1].value == 0:
+                        return "_leading(" + self.sexpr(la[0]) + ", " + self.sexpr(la[1]) + ")"
+            if isinstance(f, ast.Attribute):
+                obj = f.value
+                if (f.attr == "join" and isinstance(obj, ast.Constant) and obj.value == "" and len(a) == 1
+                        and isinstance(a[0], ast.List)):
+                    return "(" + " + ".join(['String("")'] + [self.sexpr(x) for x in a[0].elts]) + ")"
+                if f.attr == "replace" and len(a) == 2:
+                    return "_replace(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ", " + self.sexpr(a[1]) + ")"
+                if f.attr == "upper" and not a:
+                    return "_upper(" + self.sexpr(obj) + ")"
+                if f.attr == "count" and len(a) == 1:
+                    return "_count(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ")"
+                if f.attr == "find" and len(a) in (1, 2):
+                    st = self.expr(a[1]) if len(a) == 2 else "0"
+                    return "_find(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ", " + st + ")"
+                if f.attr == "split" and len(a) == 1:
+                    return "_split(" + self.sexpr(obj) + ", " + self.sexpr(a[0]) + ")"
+                if (f.attr == "isdigit" and not a and isinstance(obj, ast.Call)
+                        and isinstance(obj.func, ast.Attribute) and obj.func.attr == "lstrip"
+                        and len(obj.args) == 1 and isinstance(obj.args[0], ast.Constant)
+                        and obj.args[0].value == "-"):
+                    return "_isnum(" + self.sexpr(obj.func.value) + ")"
         raise Unsupported("expr " + ast.dump(e)[:60])
 
     def cond(self, e):
@@ -125,48 +486,58 @@ class Conv:
             return "(not " + self.cond(e.operand) + ")"
         if isinstance(e, ast.Compare):
             ops = {ast.Eq: "==", ast.NotEq: "!=", ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">="}
-            if isinstance(e.ops[0], ast.NotIn) and isinstance(e.left, ast.Attribute) and e.left.attr == "goto":
-                raise Unsupported("goto membership")
-            parts = [self.expr(e.left)]
-            lt = self.typ(e.left)
-            for op, c in zip(e.ops, e.comparators):
-                if type(op) not in ops:
-                    raise Unsupported("compare " + type(op).__name__)
-                if self.typ(c) != lt:
-                    raise Unsupported("compare types differ")
-                parts.append(ops[type(op)])
-                parts.append(self.expr(c))
             if len(e.ops) != 1:
                 raise Unsupported("chained compare")
-            return "(" + " ".join(parts) + ")"
-        if isinstance(e, ast.Name) and e.id == "_r":
-            return "(_r != 0)"
+            if type(e.ops[0]) not in ops:
+                raise Unsupported("compare " + type(e.ops[0]).__name__)
+            if self.typ(e.left) != self.typ(e.comparators[0]):
+                raise Unsupported("compare types differ")
+            return "(" + self.expr(e.left) + " " + ops[type(e.ops[0])] + " " + self.expr(e.comparators[0]) + ")"
+        t = self.typ(e)
+        if t == "Bool":
+            return self.expr(e)
+        if t == "Int":
+            return "(" + self.expr(e) + " != 0)"
         raise Unsupported("condition " + ast.dump(e)[:60])
 
-    # ---- DISPLAY: self.out += "".join(str(x) for x in [..]) + "\n" -----
+    # ---- DISPLAY: self.out += "".join(str(x) for x in [..]) [+ "\n"] -----
     def display(self, value):
-        if not (isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add)):
-            raise Unsupported("out += form")
-        call, nl = value.left, value.right
-        if not (isinstance(nl, ast.Constant) and nl.value == "\n"):
-            raise Unsupported("DISPLAY without newline")
+        nl = False
+        call = value
+        if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
+            if not (isinstance(value.right, ast.Constant) and value.right.value == "\n"):
+                raise Unsupported("out += form")
+            call, nl = value.left, True
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "join"
                 and isinstance(call.args[0], ast.GeneratorExp)):
             raise Unsupported("DISPLAY form")
         it = call.args[0].generators[0].iter
         if not isinstance(it, ast.List):
             raise Unsupported("DISPLAY list")
-        parts = []
-        for x in it.elts:
-            t = self.typ(x)
-            parts.append("String(" + self.expr(x) + ")" if t == "Int" else self.expr(x))
-        return "self.out += " + " + ".join(parts + ['"\\n"'])
+        parts = [self.sexpr(x) for x in it.elts]
+        if nl:
+            parts.append('"\\n"')
+        return "self.out += " + " + ".join(parts)
+
+    # ---- locals pre-pass (declared at the top of the paragraph) -------
+    def collect_locals(self, body):
+        self.locals = {}
+        for st in body:
+            for n in ast.walk(st):
+                if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+                    nm = n.targets[0].id
+                    if nm == "_r":
+                        continue
+                    t = self.typ(n.value)
+                    if nm in self.locals and self.locals[nm] != t:
+                        raise Unsupported("local " + nm + " changes type")
+                    self.locals[nm] = t
 
     # ---- statements --------------------------------------------------
     def stmts(self, body, ind, out):
         for s in body:
             self.stmt(s, ind, out)
-            if isinstance(s, ast.Return):
+            if isinstance(s, ast.Return) or out[-1].strip().startswith("raise "):
                 break  # Mojo warns about unreachable code after return
 
     def stmt(self, s, ind, out):
@@ -187,7 +558,7 @@ class Conv:
             if isinstance(tgt, ast.Attribute) and tgt.attr == "out":
                 out.append(p + self.display(s.value))
                 return
-            name, t = self.field(tgt)
+            name, t = self.lvalue(tgt)
             ops = {ast.Add: "+=", ast.Sub: "-=", ast.Mult: "*="}
             if type(s.op) not in ops or t != "Int" or self.typ(s.value) != "Int":
                 raise Unsupported("augassign")
@@ -199,7 +570,10 @@ class Conv:
             if isinstance(tgt, ast.Name) and tgt.id == "_r":
                 out.append(p + "_r = " + self.call(s.value))
                 return
-            name, t = self.field(tgt)
+            name, t = self.lvalue(tgt)
+            if isinstance(s.value, ast.List) and not s.value.elts and t.startswith("List"):
+                out.append(p + name + " = " + t + "()")
+                return
             if self.typ(s.value) != t:
                 raise Unsupported("assign type mismatch")
             out.append(p + name + " = " + self.expr(s.value))
@@ -214,6 +588,8 @@ class Conv:
                 raise Unsupported("while-else")
             out.append(p + "while " + self.cond(s.test) + ":")
             self.stmts(s.body, ind + 1, out)
+        elif isinstance(s, ast.For) and self.io_for(s, p, out):
+            pass
         elif isinstance(s, ast.For):
             it = s.iter
             if not (isinstance(it, ast.Call) and isinstance(it.func, ast.Name) and it.func.id == "range"
@@ -222,9 +598,71 @@ class Conv:
             out.append(p + "for _ in range(" + self.expr(it.args[0]) + "):")
             self.stmts(s.body, ind + 1, out)
         elif isinstance(s, ast.Expr):
-            out.append(p + "_ = " + self.call(s.value))
+            v = s.value
+            if (isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "call_ext"
+                    and isinstance(v.args[0], ast.Constant)):
+                # EXTERNAL is empty in the generated module, so Python raises NotImplementedError here.
+                out.append(p + 'raise Error("COBOL_to: CALL ' + v.args[0].value
+                           + ' は EXTERNAL に登録されていない")')
+                return
+            a = v.args if isinstance(v, ast.Call) else []
+            for nm, mj in (("f_open", "_fopen"), ("f_close", "_fclose"), ("f_write", "_fwrite")):
+                if self.selfcall(v, nm):
+                    extra = [self.expr(x) for x in a[1:]]
+                    out.append(p + "self." + mj + "(" + ", ".join([self.fidx(a[0])] + extra) + ")")
+                    return
+            if self.selfcall(v, "f_unpack") and len(a) == 2:
+                out.append(p + "self._funpack(" + self.fidx(a[0]) + ", String(" + self.sexpr(a[1]) + "))")
+                return
+            if (isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "append"
+                    and len(a) == 1):
+                lt = self.typ(v.func.value)
+                if lt == "List[String]":
+                    out.append(p + self.expr(v.func.value) + ".append(" + self.sexpr(a[0]) + ")")
+                    return
+            out.append(p + "_ = " + self.call(v))
         else:
             raise Unsupported("statement " + type(s).__name__)
+
+    def io_for(self, s, p, out):
+        """SORT idioms: read files into _sort_buf, sort by keys, write _sort_buf to files."""
+        it, t = s.iter, s.target
+        if (isinstance(t, ast.Name) and t.id == "_n" and isinstance(it, ast.List) and len(s.body) == 1
+                and isinstance(s.body[0], ast.With)):
+            w = s.body[0]
+            mode = w.items[0].context_expr.args[1].value
+            for c in it.elts:
+                path = 'String("' + self.files[c.value]["path"] + '")' if c.value in self.files else None
+                if path is None:
+                    raise Unsupported("sort file " + str(c.value))
+                if mode == "r":
+                    out.append(p + "self._sort_buf.extend(_readlines(" + path + "))")
+                elif mode == "w":
+                    v = "_txt" + str(len(out))
+                    out.append(p + "var " + v + ' = String("")')
+                    out.append(p + "for _row in self._sort_buf:")
+                    out.append(p + "    " + v + ' += _row + "\\n"')
+                    out.append(p + "_writefile(" + path + ", " + v + ")")
+                else:
+                    raise Unsupported("sort file mode")
+            return True
+        if (isinstance(t, ast.Tuple) and isinstance(it, ast.Call) and isinstance(it.func, ast.Name)
+                and it.func.id == "reversed" and isinstance(it.args[0], ast.List)):
+            keys = [ast.literal_eval(k) for k in it.args[0].elts]
+            for o_, w_, nm, ds in reversed(keys):
+                out.append(p + "_sort_by(self._sort_buf, " + str(o_) + ", " + str(w_) + ", "
+                           + str(bool(nm)) + ", " + str(bool(ds)) + ")")
+            return True
+        return False
+
+    def lvalue(self, tgt):
+        if isinstance(tgt, ast.Name):
+            if tgt.id not in self.locals:
+                raise Unsupported("local " + tgt.id)
+            return tgt.id, self.locals[tgt.id]
+        if isinstance(tgt, ast.Subscript) and not isinstance(tgt.slice, ast.Slice):
+            return self.expr(tgt), self.typ(tgt)
+        return self.field(tgt)
 
     def call(self, e):
         if (isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute) and isinstance(e.func.value, ast.Name)
@@ -233,13 +671,133 @@ class Conv:
         raise Unsupported("call " + ast.dump(e)[:60])
 
 
+
+FILE_METHODS = {'f_unpack', 'f_close', '_fs', 'f_write', 'f_read', 'f_pack', 'f_open'}
+
+
+def file_methods(files, fields):
+    """Mojo methods mirroring the generated Python f_open/f_read/... (one slot per _FILES entry)."""
+    names = list(files)
+    o = []
+    o += ["", "    def _fpath(self, k: Int) -> String:"]
+    for k, n in enumerate(names):
+        o += ["        if k == " + str(k) + ":", '            return String("' + files[n]["path"] + '")']
+    o += ['        return String("")', "", "    def _fs(mut self, k: Int, code: String):"]
+    any_st = False
+    for k, n in enumerate(names):
+        st = files[n]["status"]
+        if st:
+            any_st = True
+            if fields.get(st) == "Int":
+                o += ["        if k == " + str(k) + ":", "            self." + st + " = _num(code)"]
+            elif fields.get(st) == "String":
+                o += ["        if k == " + str(k) + ":", "            self." + st + " = code"]
+            else:
+                raise Unsupported("status field " + str(st))
+    if not any_st:
+        o += ["        pass"]
+    o += ["", "    def _fpack(self, k: Int) -> String:", '        var buf = String("")']
+    for k, n in enumerate(names):
+        o += ["        if k == " + str(k) + ":"]
+        if not files[n]["fields"]:
+            o += ["            pass"]
+        for attr, w, num in files[n]["fields"]:
+            t = fields.get(attr)
+            if num:
+                if t != "Int":
+                    raise Unsupported("numeric record field " + attr)
+                o += ["            if self." + attr + " < 0:",
+                      '                buf += "-" + _rjust0(String(-self.' + attr + "), " + str(w - 1) + ")",
+                      "            else:",
+                      "                buf += _rjust0(String(self." + attr + "), " + str(w) + ")"]
+            else:
+                if t != "String":
+                    raise Unsupported("text record field " + attr)
+                o += ["            buf += _ljust(_slice(self." + attr + ", 0, " + str(w) + "), " + str(w) + ")"]
+    o += ["        return buf", "", "    def _funpack(mut self, k: Int, line: String):", "        var pos = 0"]
+    for k, n in enumerate(names):
+        o += ["        if k == " + str(k) + ":"]
+        if not files[n]["fields"]:
+            o += ["            pass"]
+        for attr, w, num in files[n]["fields"]:
+            seg = "_slice(line, pos, pos + " + str(w) + ")"
+            o += ["            self." + attr + " = " + ("_num(" + seg + ")" if num else "_rstrip(" + seg + ")"),
+                  "            pos += " + str(w)]
+    o += ["        _ = pos", "",
+          "    def _fopen(mut self, k: Int, mode: String) raises:",
+          '        if mode == "output":',
+          '            _writefile(self._fpath(k), String(""))',
+          '            self._fw[k] = String("")',
+          "            self._fm[k] = 2",
+          '            self._fs(k, String("00"))',
+          '        elif mode == "extend":',
+          "            try:",
+          "                self._fw[k] = _readfile(self._fpath(k))",
+          "            except:",
+          '                self._fw[k] = String("")',
+          "            self._fm[k] = 2",
+          '            self._fs(k, String("00"))',
+          "        else:",
+          "            try:",
+          "                self._fd[k] = _readfile(self._fpath(k))",
+          "                self._fp[k] = 0",
+          "                self._fm[k] = 1",
+          '                self._fs(k, String("00"))',
+          "            except:",
+          '                self._fs(k, String("35"))',
+          "",
+          "    def _fclose(mut self, k: Int) raises:",
+          "        if self._fm[k] == 2:",
+          "            _writefile(self._fpath(k), self._fw[k])",
+          "        self._fm[k] = 0",
+          "",
+          "    def _fclose_all(mut self) raises:",
+          "        for k in range(len(self._fm)):",
+          "            self._fclose(k)",
+          "",
+          "    def _fread(mut self, k: Int) raises -> Bool:",
+          "        var t = self._fd[k]",
+          "        var pos = self._fp[k]",
+          "        if self._fm[k] != 1 or pos >= t.byte_length():",
+          '            self._fs(k, String("10"))',
+          "            return False",
+          '        var j = _find(t, "\\n", pos)',
+          "        var e = t.byte_length() if j < 0 else j + 1",
+          "        var line = _slice(t, pos, e)",
+          "        self._fp[k] = e",
+          "        var b = line.byte_length()",
+          '        while b > 0 and (_slice(line, b - 1, b) == "\\n" or _slice(line, b - 1, b) == "\\r"):',
+          "            b -= 1",
+          "        self._funpack(k, _slice(line, 0, b))",
+          '        self._fs(k, String("00"))',
+          "        return True",
+          "",
+          "    def _fwrite(mut self, k: Int) raises:",
+          "        var buf = self._fpack(k)",
+          "        if self._fm[k] == 2:",
+          '            self._fw[k] += buf + "\\n"',
+          '            self._fs(k, String("00"))',
+          "        elif self._fm[k] == 1:",
+          '            raise Error("io.UnsupportedOperation: not writable")']
+    return o
+
+
 def convert(src: str) -> str:
     tree = ast.parse(src)
     cls = next((n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "State"), None)
     if cls is None:
         raise Unsupported("no State class")
     methods = {f.name: f for f in cls.body if isinstance(f, ast.FunctionDef)}
-    extra = set(methods) - {"__init__", "call_ext", "main"} - {m for m in methods if m.startswith("p_")}
+    files = None
+    if FILE_METHODS & set(methods):
+        fa = next((n for n in tree.body if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+                   and n.targets[0].id == "_FILES"), None)
+        try:
+            files = ast.literal_eval(fa.value)
+        except Exception:
+            raise Unsupported("_FILES is not a literal")
+    extra = (set(methods) - {"__init__", "call_ext", "main"} - {m for m in methods if m.startswith("p_")}
+             - (FILE_METHODS if files is not None else set()))
     if extra:
         raise Unsupported("extra methods " + ",".join(sorted(extra)))
     fields, inits = {}, []
@@ -250,6 +808,15 @@ def convert(src: str) -> str:
         if name in RUNTIME_FIELDS:
             continue
         v = s.value
+        if (isinstance(v, ast.BinOp) and isinstance(v.op, ast.Mult) and isinstance(v.left, ast.List)
+                and len(v.left.elts) == 1 and isinstance(v.left.elts[0], ast.Constant) and v.left.elts[0].value == 0
+                and isinstance(v.right, ast.Constant) and isinstance(v.right.value, int)):
+            fields[name] = "List[Int]"
+            inits.append((name, v.right.value))
+            continue
+        if (isinstance(v, ast.UnaryOp) and isinstance(v.op, ast.USub) and isinstance(v.operand, ast.Constant)
+                and isinstance(v.operand.value, int) and not isinstance(v.operand.value, bool)):
+            v = ast.Constant(-v.operand.value)
         if not isinstance(v, ast.Constant) or isinstance(v.value, bool) or not isinstance(v.value, (int, str)):
             raise Unsupported("field " + name + " is not int/str")
         fields[name] = "Int" if isinstance(v.value, int) else "String"
@@ -261,35 +828,55 @@ def convert(src: str) -> str:
             order = [c.value for c in s.value.elts]
     if order is None:
         raise Unsupported("no paragraph order")
+    fields["_sort_buf"] = "List[String]"
+    fields["_sort_pos"] = "Int"
     c = Conv(fields)
+    c.files = files or {}
     o = ["# Generated by RMojo tools/cobol2mojo from COBOL_to Python output.", HELPERS, "",
          "struct State:", "    var out: String", "    var goto: String"]
     for n, t in fields.items():
         o.append("    var " + n + ": " + t)
+    o += ["    var _fm: List[Int]", "    var _fp: List[Int]", "    var _fd: List[String]", "    var _fw: List[String]"]
     o += ["", "    def __init__(out self):", '        self.out = String("")', '        self.goto = String("")']
+    o += ["        self._sort_buf = List[String]()", "        self._sort_pos = 0", "        self._fm = List[Int]()",
+          "        self._fp = List[Int]()", "        self._fd = List[String]()", "        self._fw = List[String]()",
+          "        for _ in range(" + str(len(c.files)) + "):", "            self._fm.append(0)",
+          "            self._fp.append(0)", '            self._fd.append(String(""))',
+          '            self._fw.append(String(""))']
     for n, v in inits:
-        o.append("        self." + n + " = " + c.expr(v))
+        if fields[n] == "List[Int]":
+            o.append("        self." + n + " = List[Int]()")
+            o.append("        for _ in range(" + str(v) + "):")
+            o.append("            self." + n + ".append(0)")
+        else:
+            o.append("        self." + n + " = " + c.expr(v))
     # paragraphs
     for name in [m for m in methods if m.startswith("p_")]:
         body = []
+        c.collect_locals(methods[name].body)
         c.stmts(methods[name].body, 2, body)
-        o += ["", "    def " + name + "(mut self) -> Int:"]
+        o += ["", "    def " + name + "(mut self) raises -> Int:"]
+        defaults = {"Int": "0", "String": 'String("")', "Bool": "False", "List[String]": "List[String]()"}
+        for ln, lt in c.locals.items():
+            o.append("        var " + ln + ": " + lt + " = " + defaults[lt])
         if any("_r = " in b for b in body):
             o.append("        var _r: Int = 0")
         o += body
+    if True:
+        o += file_methods(files or {}, fields)
     # dispatcher + main loop (same semantics as the Python main())
-    o += ["", "    def _dispatch(mut self, i: Int) -> Int:"]
+    o += ["", "    def _dispatch(mut self, i: Int) raises -> Int:"]
     for k, n in enumerate(order):
         o += ["        if i == " + str(k) + ":", "            return self.p_" + n + "()"]
     o += ["        return 0", "", "    def _index(self, name: String) -> Int:"]
     for k, n in enumerate(order):
         o += ['        if name == "' + n + '":', "            return " + str(k)]
-    o += ["        return -1", "", "    def main(mut self) -> Int:", "        var i = 0",
+    o += ["        return -1", "", "    def main(mut self) raises -> Int:", "        var i = 0",
           "        while i < " + str(len(order)) + ":", "            var r = self._dispatch(i)",
           "            if r == 1:", "                return 1", "            if r == 2:",
           "                var j = self._index(self.goto)", "                if j < 0:", "                    return 2",
           "                i = j", "                continue", "            i += 1", "        return 0", "",
-          "", "def main():", "    var s = State()", "    _ = s.main()", '    print(s.out, end="")', ""]
+          "", "def main() raises:", "    var s = State()", "    _ = s.main()", '    print(s.out, end="")', ""]
     return "\n".join(o)
 
 
