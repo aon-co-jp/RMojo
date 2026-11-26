@@ -252,6 +252,7 @@ class Conv:
     def __init__(self, fields):
         self.fields = fields  # name -> "Int" | "String" | "List[Int]"
         self.locals = {}      # per-method local name -> type
+        self.bridge = False   # True: SQL / CALL statements run in the embedded Python runtime
 
     # ---- helpers for recognising generated idioms --------------------
     @staticmethod
@@ -363,6 +364,25 @@ class Conv:
     def selfcall(e, name):
         return (isinstance(e, ast.Call) and isinstance(e.func, ast.Attribute) and isinstance(e.func.value, ast.Name)
                 and e.func.value.id == "self" and e.func.attr == name)
+
+    PY_NAMES = {"_c", "_row", "_cur", "SQL_HANDLER", "SQL_NULL", "_sqlnum"}
+    PY_ATTRS = {"_cur", "_prep", "call_ext"}
+
+    def is_py(self, node):
+        """True when the node needs the Python runtime (SQL handler, cursors, CALL registry)."""
+        for n in ast.walk(node):
+            if isinstance(n, ast.Name) and n.id in self.PY_NAMES:
+                return True
+            if isinstance(n, ast.Tuple) and isinstance(getattr(n, "ctx", None), ast.Store):
+                return True
+            if (isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name) and n.value.id == "self"
+                    and n.attr in self.PY_ATTRS):
+                return True
+        return False
+
+    def py_src(self, node):
+        src = ast.unparse(node)
+        return '"' + src.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n") + '"'
 
     def field(self, e):
         if not (isinstance(e, ast.Attribute) and isinstance(e.value, ast.Name) and e.value.id == "self"):
@@ -524,6 +544,8 @@ class Conv:
         self.locals = {}
         for st in body:
             for n in ast.walk(st):
+                if self.bridge and self.is_py(n) and isinstance(n, ast.Assign):
+                    continue
                 if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
                     nm = n.targets[0].id
                     if nm == "_r":
@@ -542,6 +564,17 @@ class Conv:
 
     def stmt(self, s, ind, out):
         p = "    " * ind
+        if self.bridge and isinstance(s, (ast.If, ast.While)) and self.is_py(s.test):
+            kw = "if " if isinstance(s, ast.If) else "while "
+            out.append(p + kw + "self._pyb(" + self.py_src(s.test) + "):")
+            self.stmts(s.body, ind + 1, out)
+            if s.orelse:
+                out.append(p + "else:")
+                self.stmts(s.orelse, ind + 1, out)
+            return
+        if self.bridge and not isinstance(s, (ast.If, ast.While, ast.For)) and self.is_py(s):
+            out.append(p + "self._pyx(" + self.py_src(s) + ")")
+            return
         if isinstance(s, ast.Pass):
             out.append(p + "pass")
         elif isinstance(s, ast.Return):
@@ -569,6 +602,8 @@ class Conv:
             tgt = s.targets[0]
             if isinstance(tgt, ast.Name) and tgt.id == "_r":
                 out.append(p + "_r = " + self.call(s.value))
+                if self.bridge:
+                    out.append(p + 'self._py["_r"] = _r')
                 return
             name, t = self.lvalue(tgt)
             if isinstance(s.value, ast.List) and not s.value.elts and t.startswith("List"):
@@ -782,6 +817,42 @@ def file_methods(files, fields):
     return o
 
 
+def bridge_methods(src, fields):
+    """Embedded Python runtime: the COBOL_to module source is exec'd once, SQL / CALL statements run there."""
+    esc = src.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    scalars = [(n, t) for n, t in fields.items() if t in ("Int", "String")] + [("out", "String"), ("goto", "String")]
+    o = ["", "    def _pyinit(mut self) raises:",
+         '        var b = Python.import_module("builtins")',
+         "        self._py = b.dict()",
+         '        self._py["__name__"] = "c2m_cobol_to"',
+         '        _ = b.exec("' + esc + '", self._py)',
+         '        self._py["self"] = Python.import_module("types").SimpleNamespace()',
+         '        _ = b.exec("self._cur = {}\\nself._prep = {}\\n'
+         'def _c2m_call(name, args):\\n    f = EXTERNAL.get(name)\\n    if f is None:\\n'
+         '        raise NotImplementedError(\'COBOL_to: CALL \' + name + \' は EXTERNAL に登録されていない\')\\n'
+         '    return f(*args)\\nself.call_ext = _c2m_call\\n'
+         'import os as _os\\nif _os.path.exists(\'c2m_external.py\'):\\n    _g = {}\\n'
+         '    exec(open(\'c2m_external.py\', encoding=\'utf-8\').read(), _g)\\n    _g[\'register\'](EXTERNAL)\\n", self._py)',
+         "", "    def _sync_in(mut self) raises:",
+         '        var b = Python.import_module("builtins")',
+         '        var ns = self._py["self"]']
+    for n, t in scalars:
+        o.append('        _ = b.setattr(ns, "' + n + '", self.' + n + ")")
+    o += ["", "    def _sync_out(mut self) raises:", '        var ns = self._py["self"]']
+    for n, t in scalars:
+        o.append("        self." + n + " = " + ("Int(py=ns." if t == "Int" else "String(py=ns.") + n + ")")
+    o += ["", "    def _pyx(mut self, code: String) raises:",
+          "        self._sync_in()",
+          '        _ = Python.import_module("builtins").exec(code, self._py)',
+          "        self._sync_out()",
+          "", "    def _pyb(mut self, code: String) raises -> Bool:",
+          "        self._sync_in()",
+          '        var v = Python.import_module("builtins").eval(code, self._py)',
+          "        self._sync_out()",
+          "        return Bool(py=Python.import_module(\"builtins\").bool(v))"]
+    return o
+
+
 def convert(src: str) -> str:
     tree = ast.parse(src)
     cls = next((n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "State"), None)
@@ -795,7 +866,9 @@ def convert(src: str) -> str:
         try:
             files = ast.literal_eval(fa.value)
         except Exception:
-            raise Unsupported("_FILES is not a literal")
+            g = {"__name__": "c2m_files"}
+            exec(compile(src, "<cobol_to>", "exec"), g)  # our own COBOL_to output
+            files = g["_FILES"]
     extra = (set(methods) - {"__init__", "call_ext", "main"} - {m for m in methods if m.startswith("p_")}
              - (FILE_METHODS if files is not None else set()))
     if extra:
@@ -832,12 +905,18 @@ def convert(src: str) -> str:
     fields["_sort_pos"] = "Int"
     c = Conv(fields)
     c.files = files or {}
-    o = ["# Generated by RMojo tools/cobol2mojo from COBOL_to Python output.", HELPERS, "",
+    c.bridge = any(c.is_py(st) for m in methods.values() if m.name.startswith("p_") for st in ast.walk(m))
+    o = ["# Generated by RMojo tools/cobol2mojo from COBOL_to Python output.",
+         "from std.python import Python, PythonObject", HELPERS, "",
          "struct State:", "    var out: String", "    var goto: String"]
     for n, t in fields.items():
         o.append("    var " + n + ": " + t)
+    if c.bridge:
+        o.append("    var _py: PythonObject")
     o += ["    var _fm: List[Int]", "    var _fp: List[Int]", "    var _fd: List[String]", "    var _fw: List[String]"]
     o += ["", "    def __init__(out self):", '        self.out = String("")', '        self.goto = String("")']
+    if c.bridge:
+        o.append("        self._py = PythonObject(None)")
     o += ["        self._sort_buf = List[String]()", "        self._sort_pos = 0", "        self._fm = List[Int]()",
           "        self._fp = List[Int]()", "        self._fd = List[String]()", "        self._fw = List[String]()",
           "        for _ in range(" + str(len(c.files)) + "):", "            self._fm.append(0)",
@@ -864,6 +943,8 @@ def convert(src: str) -> str:
         o += body
     if True:
         o += file_methods(files or {}, fields)
+    if c.bridge:
+        o += bridge_methods(src, fields)
     # dispatcher + main loop (same semantics as the Python main())
     o += ["", "    def _dispatch(mut self, i: Int) raises -> Int:"]
     for k, n in enumerate(order):
@@ -871,7 +952,10 @@ def convert(src: str) -> str:
     o += ["        return 0", "", "    def _index(self, name: String) -> Int:"]
     for k, n in enumerate(order):
         o += ['        if name == "' + n + '":', "            return " + str(k)]
-    o += ["        return -1", "", "    def main(mut self) raises -> Int:", "        var i = 0",
+    o += ["        return -1", "", "    def main(mut self) raises -> Int:"]
+    if c.bridge:
+        o.append("        self._pyinit()")
+    o += ["        var i = 0",
           "        while i < " + str(len(order)) + ":", "            var r = self._dispatch(i)",
           "            if r == 1:", "                return 1", "            if r == 2:",
           "                var j = self._index(self.goto)", "                if j < 0:", "                    return 2",
