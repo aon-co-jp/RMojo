@@ -4,6 +4,7 @@
 # Run: mojo tools/cobol2mojo/c2m_sql.mojo (WSL, Mojo 1.2).
 from std.ffi import OwnedDLHandle
 from std.memory import Pointer
+from std.os import getenv
 
 comptime SQL_NULL = "\x00NULL"
 
@@ -23,6 +24,9 @@ struct SqlRt(Movable):
             return
         var slot = List[Int](length=1, fill=0)
         var p = String(":memory:")
+        var envp = getenv("COBOL_SQL_DB")
+        if envp != "":
+            p = envp
         var rc = self.lib.call["sqlite3_open", Int32](p.unsafe_ptr(), slot.unsafe_ptr())
         self.db = slot[0]
         if rc != 0:

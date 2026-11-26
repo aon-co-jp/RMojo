@@ -978,7 +978,7 @@ SQL_STATE_FIELDS = ["_sql: SqlRt", "_curs: List[List[List[String]]]", "_curn: Li
 def sql_runtime_src():
     t = (Path(__file__).parent / "c2m_sql.mojo").read_text(encoding="utf-8")
     a, b = t.index("comptime SQL_NULL"), t.index("def main() raises:")
-    return "from std.ffi import OwnedDLHandle\nfrom std.memory import Pointer\n\n" + t[a:b]
+    return "from std.ffi import OwnedDLHandle\nfrom std.memory import Pointer\nfrom std.os import getenv\n\n" + t[a:b]
 
 
 def sql_methods():
